@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGL2 Storm (Parent-Child System)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: rgba(200, 220, 255, 0.8);
+            font-family: 'Segoe UI', sans-serif;
+            pointer-events: none;
+            user-select: none;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <!-- ====================================================== -->
+    <!-- SHADERS -->
+    <!-- ====================================================== -->
+
+    <!-- CLOUD SHADER (Polyline Lighting) -->
+    <script id="vs-cloud" type="x-shader/x-vertex">#version 300 es
+        in vec2 a_position;
+        out vec2 v_uv;
+        void main() {
+            v_uv = a_position * 0.5 + 0.5;
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+    <script id="fs-cloud" type="x-shader/x-fragment">#version 300 es
+        precision highp float;
+        uniform float u_time;
+        uniform vec2 u_resolution;
+        
+        #define MAX_POINTS 32
+        uniform vec2 u_lightPath[MAX_POINTS]; 
+        uniform int u_lightPointCount;
+        uniform float u_lightStrength;
+        
+        in vec2 v_uv;
+        out vec4 outColor;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            f = f*f*(3.0-2.0*f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y);
+        }
+        float fbm(vec2 p) {
+            float t=0.0, a=0.5;
+            for(int i=0; i<5; i++) { t+=noise(p)*a; p*=2.0; a*=0.5; }
+            return t;
+        }
+
+        float distToSegment(vec2 p, vec2 a, vec2 b) {
+            vec2 pa = p - a;
+            vec2 ba = b - a;
+            float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+            return length(pa - ba * h);
+        }
+
+        void main() {
+            float aspect = u_resolution.x / u_resolution.y;
+            vec2 uv = v_uv;
+            uv.x *= aspect;
+
+            float den = fbm(uv * 2.5 + vec2(u_time * 0.02, u_time * 0.005));
+            
+            float closestDist = 1000.0;
+            for(int i = 0; i < MAX_POINTS - 1; i++) {
+                if(i >= u_lightPointCount - 1) break;
+                vec2 p1 = u_lightPath[i] / u_resolution; p1.y = 1.0 - p1.y; p1.x *= aspect;
+                vec2 p2 = u_lightPath[i+1] / u_resolution; p2.y = 1.0 - p2.y; p2.x *= aspect;
+                closestDist = min(closestDist, distToSegment(uv, p1, p2));
+            }
+
+            float light = u_lightStrength / (closestDist * closestDist * 18.0 + 0.15);
+            
+            vec3 sky = vec3(0.01, 0.01, 0.03);
+            vec3 cloudDark = vec3(0.04, 0.04, 0.1);
+            vec3 cloudLit = vec3(0.3, 0.3, 0.55); 
+            
+            vec3 col = mix(sky, mix(cloudDark, cloudLit, light), den);
+            col += vec3(0.4, 0.5, 1.0) * light * 0.2 * den; 
+
+            outColor = vec4(col, 1.0);
+        }
+    </script>
+
+    <!-- BOLT SHADER -->
+    <script id="vs-bolt" type="x-shader/x-vertex">#version 300 es
+        in vec2 a_position;
+        in float a_offset; 
+        in float a_time; 
+        uniform vec2 u_resolution;
+        out float v_edge; 
+        out float v_time;
+        void main() {
+            v_edge = a_offset;
+            v_time = a_time;
+            vec2 zeroToOne = a_position / u_resolution;
+            vec2 clipSpace = (zeroToOne * 2.0) - 1.0;
+            gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+        }
+    </script>
+
+    <script id="fs-bolt" type="x-shader/x-fragment">#version 300 es
+        precision mediump float;
+        in float v_edge;
+        in float v_time;
+        uniform float u_life;
+        uniform float u_progress;
+        out vec4 outColor;
+
+        void main() {
+            if (v_time > u_progress) discard;
+
+            float d = abs(v_edge);
+            float core = exp(-d * d * 12.0); 
+            float aura = exp(-d * 3.0);
+
+            float tipIntensity = 1.0 - smoothstep(0.0, 0.1, u_progress - v_time);
+            vec3 colorCore = vec3(1.0, 1.0, 1.0) + vec3(0.5, 0.8, 1.0) * tipIntensity * 3.0;
+            vec3 colorAura = vec3(0.4, 0.1, 1.0);
+
+            vec3 finalColor = mix(colorAura, colorCore, core);
+            outColor = vec4(finalColor, aura * u_life);
+        }
+    </script>
+
+    <!-- ====================================================== -->
+    <!-- JS LOGIC -->
+    <!-- ====================================================== -->
+    <script>
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl2', { alpha: false, antialias: false });
+
+        // --- Shaders ---
+        function createProgram(vsSrc, fsSrc) {
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
+            const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+            return prog;
+        }
+        const cloudProg = createProgram(document.getElementById('vs-cloud').text, document.getElementById('fs-cloud').text);
+        const boltProg = createProgram(document.getElementById('vs-bolt').text, document.getElementById('fs-bolt').text);
+
+        // --- Buffers ---
+        const cloudBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cloudBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+        const cloudVAO = gl.createVertexArray();
+        gl.bindVertexArray(cloudVAO);
+        const cPos = gl.getAttribLocation(cloudProg, 'a_position');
+        gl.enableVertexAttribArray(cPos);
+        gl.vertexAttribPointer(cPos, 2, gl.FLOAT, false, 0, 0);
+
+        const boltBuffer = gl.createBuffer();
+        const boltVAO = gl.createVertexArray();
+        gl.bindVertexArray(boltVAO);
+        gl.bindBuffer(gl.ARRAY_BUFFER, boltBuffer);
+
+        const stride = 4 * 4;
+        const bPos = gl.getAttribLocation(boltProg, 'a_position');
+        const bOff = gl.getAttribLocation(boltProg, 'a_offset');
+        const bTime = gl.getAttribLocation(boltProg, 'a_time');
+
+        gl.enableVertexAttribArray(bPos); gl.vertexAttribPointer(bPos, 2, gl.FLOAT, false, stride, 0);
+        gl.enableVertexAttribArray(bOff); gl.vertexAttribPointer(bOff, 1, gl.FLOAT, false, stride, 8);
+        gl.enableVertexAttribArray(bTime); gl.vertexAttribPointer(bTime, 1, gl.FLOAT, false, stride, 12);
+
+        // --- State ---
+        let bolts = [];
+        const MAX_LIGHT_POINTS = 32;
+        let lightPathFlat = new Float32Array(MAX_LIGHT_POINTS * 2);
+        let lightPointCount = 0;
+        let lightStr = 0;
+
+        class Bolt {
+            constructor(sx, sy, ex, ey, thickness, displace, tStart = 0, tEnd = 1) {
+                this.life = 1.0;
+                this.progress = 0.0;
+                this.speed = 4.5;
+                this.decay = 0.015 + Math.random() * 0.02;
+                this.mesh = [];
+                this.vertexCount = 0;
+                this.hasFlashed = false;
+
+                // Hierarchy: Branches are children
+                this.children = [];
+                this.coarsePath = [];
+
+                // Lighting path logic (only for main trunk usually)
+                if (thickness > 6.0) this.coarsePath.push({ x: sx, y: sy, t: tStart });
+
+                const skeleton = [];
+                this.generateSkeleton(skeleton, sx, sy, ex, ey, displace, thickness, tStart, tEnd);
+
+                // Close lighting path
+                if (thickness > 6.0) {
+                    this.coarsePath.push({ x: ex, y: ey, t: tEnd });
+                    this.coarsePath.sort((a, b) => a.t - b.t);
+                    this.updateGlobalLighting();
+                }
+
+                this.createMesh(skeleton);
+            }
+
+            updateGlobalLighting() {
+                lightPointCount = Math.min(this.coarsePath.length, MAX_LIGHT_POINTS);
+                for (let i = 0; i < lightPointCount; i++) {
+                    lightPathFlat[i * 2] = this.coarsePath[i].x;
+                    lightPathFlat[i * 2 + 1] = this.coarsePath[i].y;
+                }
+            }
+
+            generateSkeleton(arr, x1, y1, x2, y2, displace, width, t1, t2) {
+                if (displace < 4) {
+                    arr.push({ x: x1, y: y1, w: width, t: t1 });
+                    arr.push({ x: x2, y: y2, w: width, t: t2 });
+                    return;
+                }
+
+                const midX = (x1 + x2) / 2; const midY = (y1 + y2) / 2;
+                const dx = x2 - x1; const dy = y2 - y1;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                const nx = -dy / len; const ny = dx / len;
+
+                const offset = (Math.random() - 0.5) * displace;
+                const tx = midX + nx * offset;
+                const ty = midY + ny * offset;
+                const midT = (t1 + t2) / 2;
+
+                // Lighting Path
+                if (this.coarsePath.length > 0 && displace > 40) {
+                    this.coarsePath.push({ x: tx, y: ty, t: midT });
+                }
+
+                this.generateSkeleton(arr, x1, y1, tx, ty, displace / 2, width, t1, midT);
+
+                // PARENT-CHILD BRANCHING
+                // We create a new Bolt object for the branch and add it to 'children'
+                if (displace > 30 && Math.random() < 0.3) {
+                    const angle = Math.atan2(dy, dx) + (Math.random() < 0.5 ? 0.7 : -0.7);
+                    const blen = len * 0.6;
+                    const bx = tx + Math.cos(angle) * blen;
+                    const by = ty + Math.sin(angle) * blen;
+
+                    // Branch timing: Starts at midT, ends at midT+0.3
+                    const branch = new Bolt(tx, ty, bx, by, width * 0.5, displace / 1.5, midT, midT + 0.3);
+                    this.children.push(branch);
+                }
+
+                this.generateSkeleton(arr, tx, ty, x2, y2, displace / 2, width, midT, t2);
+            }
+
+            createMesh(skeleton) {
+                const data = [];
+                for (let i = 0; i < skeleton.length - 1; i++) {
+                    const p1 = skeleton[i]; const p2 = skeleton[i + 1];
+
+                    // Ignore zero-length (shouldn't happen in this version)
+                    if (Math.abs(p1.x - p2.x) < 0.1 && Math.abs(p1.y - p2.y) < 0.1) continue;
+
+                    const dx = p2.x - p1.x; const dy = p2.y - p1.y;
+                    const len = Math.sqrt(dx * dx + dy * dy);
+                    if (len < 0.1) continue;
+
+                    const nx = -dy / len; const ny = dx / len;
+                    const w = p1.w;
+
+                    data.push(
+                        p1.x + nx * w, p1.y + ny * w, 1.0, p1.t,
+                        p1.x - nx * w, p1.y - ny * w, -1.0, p1.t,
+                        p2.x + nx * w, p2.y + ny * w, 1.0, p2.t,
+                        p1.x - nx * w, p1.y - ny * w, -1.0, p1.t,
+                        p2.x + nx * w, p2.y + ny * w, 1.0, p2.t,
+                        p2.x - nx * w, p2.y - ny * w, -1.0, p2.t
+                    );
+                }
+                this.mesh = new Float32Array(data);
+                this.vertexCount = data.length / 4;
+            }
+
+            update(dt) {
+                if (this.progress < 1.5) this.progress += this.speed * dt;
+                else this.life -= this.decay;
+
+                if (!this.hasFlashed && this.progress > 0.6) {
+                    lightStr = 2.0;
+                    this.hasFlashed = true;
+                }
+
+                return this.life > 0;
+            }
+        }
+
+        // --- Main Loop ---
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function spawn(x, y) {
+            const sx = x || Math.random() * canvas.width;
+            const sy = y || -50;
+            const ex = sx + (Math.random() - 0.5) * 400;
+            const ey = canvas.height - 50;
+
+            const b = new Bolt(sx, sy, ex, ey, 8.0, 250);
+            bolts.push(b);
+        }
+
+        let lastTime = 0;
+        function render(time) {
+            const dt = (time - lastTime) * 0.001;
+            lastTime = time;
+
+            lightStr *= 0.92;
+
+            // 1. Clouds
+            gl.disable(gl.BLEND);
+            gl.useProgram(cloudProg);
+            gl.bindVertexArray(cloudVAO);
+            gl.uniform1f(gl.getUniformLocation(cloudProg, 'u_time'), time * 0.001);
+            gl.uniform2f(gl.getUniformLocation(cloudProg, 'u_resolution'), canvas.width, canvas.height);
+
+            gl.uniform2fv(gl.getUniformLocation(cloudProg, 'u_lightPath'), lightPathFlat);
+            gl.uniform1i(gl.getUniformLocation(cloudProg, 'u_lightPointCount'), lightPointCount);
+            gl.uniform1f(gl.getUniformLocation(cloudProg, 'u_lightStrength'), lightStr);
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // 2. Bolts
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+
+            gl.useProgram(boltProg);
+            gl.bindVertexArray(boltVAO);
+            gl.uniform2f(gl.getUniformLocation(boltProg, 'u_resolution'), canvas.width, canvas.height);
+            const uLife = gl.getUniformLocation(boltProg, 'u_life');
+            const uProg = gl.getUniformLocation(boltProg, 'u_progress');
+
+            // Iterate backwards to allow removal
+            for (let i = bolts.length - 1; i >= 0; i--) {
+                const b = bolts[i];
+
+                // Only update the MAIN bolt.
+                // Children do not need update() called as they inherit state.
+                if (!b.update(dt)) {
+                    bolts.splice(i, 1);
+                    continue;
+                }
+
+                // Helper to draw a single mesh
+                const drawMesh = (mesh, vCount, life, prog) => {
+                    gl.uniform1f(uLife, life);
+                    gl.uniform1f(uProg, prog);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, boltBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.DYNAMIC_DRAW);
+                    gl.drawArrays(gl.TRIANGLES, 0, vCount);
+                };
+
+                // Draw Trunk
+                drawMesh(b.mesh, b.vertexCount, b.life, b.progress);
+
+                // Draw Children (using Parent's Life and Progress)
+                // Children have their own 't' values baked into their mesh relative to the global start
+                // so passing the parent's progress works perfectly.
+                for (let child of b.children) {
+                    drawMesh(child.mesh, child.vertexCount, b.life, b.progress);
+                }
+            }
+
+            if (Math.random() < 0.01) spawn();
+            requestAnimationFrame(render);
+        }
+
+        window.addEventListener('pointerdown', e => spawn(e.clientX, e.clientY));
+        render(0);
+
+    </script>
+</body>
+
+</html>
