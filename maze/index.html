@@ -3,18 +3,15 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D Neon Maze - Mobile Final</title>
+    <title>3D Neon Maze - Final</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background: #000;
+            background: #020005;
+            /* Deep Cyberpunk Background */
             font-family: monospace;
             user-select: none;
-            -webkit-user-select: none;
-            touch-action: none;
-            /* Critical for mobile controls */
         }
 
         canvas {
@@ -28,70 +25,31 @@
             top: 20px;
             left: 20px;
             color: #00ffcc;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 10px 15px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
             pointer-events: none;
             border-left: 4px solid #d400ff;
-            line-height: 1.4em;
+            line-height: 1.5em;
             box-shadow: 0 0 15px rgba(212, 0, 255, 0.3);
             border-radius: 0 10px 10px 0;
             backdrop-filter: blur(4px);
-            z-index: 10;
         }
 
-        /* --- MOBILE CONTROLS --- */
-        #mobile-controls {
-            position: absolute;
-            bottom: 30px;
-            left: 0;
-            width: 100%;
-            height: 140px;
-            display: flex;
-            justify-content: space-between;
-            padding: 0 30px;
-            box-sizing: border-box;
-            pointer-events: none;
-            z-index: 20;
-        }
-
-        .control-group {
-            pointer-events: auto;
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }
-
-        .d-btn {
-            width: 80px;
-            height: 80px;
-            border: 2px solid rgba(0, 255, 204, 0.5);
-            background: rgba(0, 20, 20, 0.4);
-            border-radius: 50%;
-            color: #00ffcc;
-            font-size: 30px;
+        .key-indicator {
+            display: inline-block;
+            width: 20px;
+            text-align: center;
+            background: #222;
+            color: #555;
+            border-radius: 4px;
+            margin: 0 2px;
             font-weight: bold;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            box-shadow: 0 0 10px rgba(0, 255, 204, 0.1);
-            transition: transform 0.1s;
-            cursor: pointer;
-            backdrop-filter: blur(4px);
-            -webkit-tap-highlight-color: transparent;
         }
 
-        .d-btn:active,
-        .d-btn.pressed {
-            background: rgba(0, 255, 204, 0.3);
-            border-color: #fff;
-            transform: scale(0.9);
-            box-shadow: 0 0 20px rgba(0, 255, 204, 0.6);
-        }
-
-        @media (max-width: 600px) {
-            #keys-hint {
-                display: none;
-            }
+        .active {
+            background: #00ffcc;
+            color: #000;
+            box-shadow: 0 0 8px #00ffcc;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/3.4.2/gl-matrix-min.js"></script>
@@ -99,38 +57,33 @@
 
 <body>
     <div id="ui">
-        <b>// NEON MAZE //</b><br>
+        <b>// NEON MAZE : FINAL //</b><br>
         COORD: <span id="pos">0, 0</span><br>
-        <div id="keys-hint" style="margin-top: 5px; opacity: 0.7;">
-            <small>WASD / ARROWS</small>
+        <div style="margin-top: 10px;">
+            THRUST:
+            <span id="k-w" class="key-indicator">W</span>
+            <span id="k-a" class="key-indicator">A</span>
+            <span id="k-s" class="key-indicator">S</span>
+            <span id="k-d" class="key-indicator">D</span>
         </div>
     </div>
-
-    <!-- TOUCH CONTROLS -->
-    <div id="mobile-controls">
-        <div class="control-group">
-            <div class="d-btn" id="btn-left" data-key="a">◄</div>
-            <div class="d-btn" id="btn-right" data-key="d">►</div>
-        </div>
-        <div class="control-group" style="flex-direction: column; gap: 10px;">
-            <div class="d-btn" id="btn-up" data-key="w" style="height:65px;">▲</div>
-            <div class="d-btn" id="btn-down" data-key="s" style="height:65px;">▼</div>
-        </div>
-    </div>
-
     <canvas id="glCanvas"></canvas>
 
     <script>
+        // ==========================================
+        // 0. SETUP & UTILS
+        // ==========================================
         if (typeof glMatrix === 'undefined') throw new Error("gl-matrix not loaded");
         const { mat4, vec3 } = glMatrix;
         const canvas = document.getElementById("glCanvas");
         const gl = canvas.getContext("webgl2");
         const uiPos = document.getElementById("pos");
+        const uiKeys = {
+            "w": document.getElementById("k-w"), "a": document.getElementById("k-a"),
+            "s": document.getElementById("k-s"), "d": document.getElementById("k-d"),
+        };
 
-        if (!gl) {
-            document.body.innerHTML = "<h1 style='color:white; text-align:center; margin-top:50px;'>WebGL2 Not Supported</h1>";
-            throw new Error("WebGL2 not supported");
-        }
+        if (!gl) alert("WebGL2 not supported");
 
         function resize() {
             canvas.width = window.innerWidth;
@@ -138,51 +91,19 @@
             gl.viewport(0, 0, canvas.width, canvas.height);
         }
         window.addEventListener("resize", resize);
-        window.addEventListener("contextmenu", e => e.preventDefault());
+        window.addEventListener("click", () => window.focus());
         resize();
 
         // ==========================================
-        // 1. INPUT HANDLING
-        // ==========================================
-        const keys = { w: false, a: false, s: false, d: false };
-
-        window.addEventListener("keydown", e => {
-            const map = { 'KeyW': 'w', 'ArrowUp': 'w', 'KeyS': 's', 'ArrowDown': 's', 'KeyA': 'a', 'ArrowLeft': 'a', 'KeyD': 'd', 'ArrowRight': 'd' };
-            if (map[e.code]) keys[map[e.code]] = true;
-        });
-        window.addEventListener("keyup", e => {
-            const map = { 'KeyW': 'w', 'ArrowUp': 'w', 'KeyS': 's', 'ArrowDown': 's', 'KeyA': 'a', 'ArrowLeft': 'a', 'KeyD': 'd', 'ArrowRight': 'd' };
-            if (map[e.code]) keys[map[e.code]] = false;
-        });
-
-        // Touch handling
-        document.querySelectorAll('.d-btn').forEach(btn => {
-            const key = btn.dataset.key;
-
-            const press = (e) => {
-                if (e.cancelable) e.preventDefault();
-                keys[key] = true;
-                btn.classList.add('pressed');
-            };
-            const release = (e) => {
-                if (e.cancelable) e.preventDefault();
-                keys[key] = false;
-                btn.classList.remove('pressed');
-            };
-
-            btn.addEventListener('touchstart', press, { passive: false });
-            btn.addEventListener('touchend', release, { passive: false });
-            // Mouse fallback
-            btn.addEventListener('mousedown', press);
-            btn.addEventListener('mouseup', release);
-            btn.addEventListener('mouseleave', release);
-        });
-
-        // ==========================================
-        // 2. MAZE LOGIC
+        // 1. MAZE LOGIC
         // ==========================================
         const GRID_SCALE = 1.5;
-        function hash(x, y) { return (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1; }
+
+        function hash(x, y) {
+            let n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+            return n - Math.floor(n);
+        }
+
         function isWall(gx, gy) {
             const cx = (gx % 2 + 2) % 2;
             const cy = (gy % 2 + 2) % 2;
@@ -196,7 +117,7 @@
         }
 
         // ==========================================
-        // 3. SHADERS
+        // 2. SHADERS (Lighting Overhaul)
         // ==========================================
         const vsSource = `#version 300 es
         layout(location = 0) in vec3 aPos;
@@ -214,9 +135,11 @@
 
         void main() {
             vec3 worldPos;
-            if (uIsInstanced) worldPos = (aPos * uInstanceScale) + aInstancePos;
-            else worldPos = vec3(uModel * vec4(aPos, 1.0));
-            
+            if (uIsInstanced) {
+                worldPos = (aPos * uInstanceScale) + aInstancePos;
+            } else {
+                worldPos = vec3(uModel * vec4(aPos, 1.0));
+            }
             vWorldPos = worldPos;
             vNormal = aNormal;
             gl_Position = uProjection * uView * vec4(worldPos, 1.0);
@@ -231,7 +154,7 @@
         uniform vec4 uColor;
         uniform vec3 uLightDir;
         uniform bool uIsGrid;
-        uniform bool uIsInstanced; 
+        uniform bool uIsInstanced; // True for Walls, False for Player
         uniform vec3 uPlayerPos;
         uniform float uTime; 
 
@@ -239,64 +162,91 @@
 
         void main() {
             float dist = distance(vWorldPos.xz, uPlayerPos.xz);
-            vec3 bgColor = vec3(0.01, 0.0, 0.02); 
+            vec3 bgColor = vec3(0.01, 0.0, 0.02); // Matches CSS Background
 
             if (uIsGrid) {
-                // NEON GRID
-                vec3 colGrid = vec3(0.0, 1.0, 1.0);
-                vec3 colMajor = vec3(1.0, 0.0, 1.0);
-                vec2 uv = vWorldPos.xz;
-                vec2 dUV = max(fwidth(uv), 0.0001); 
+                // === FLOOR: NEON GRID ===
+                vec3 colGrid = vec3(0.0, 1.0, 1.0);   // Cyan
+                vec3 colMajor = vec3(1.0, 0.0, 1.0);  // Magenta
 
+                vec2 uv = vWorldPos.xz;
+                vec2 dUV = fwidth(uv); 
+                dUV = max(dUV, 0.0001); // Safety
+
+                // Grid Logic
                 vec2 grid = abs(fract(uv - 0.5) - 0.5) / dUV;
                 float line = 1.0 - min(min(grid.x, grid.y), 1.0);
                 
                 vec2 majorUV = uv / 10.0;
-                vec2 dMajorUV = max(fwidth(majorUV), 0.0001); 
+                vec2 dMajorUV = fwidth(majorUV); 
+                dMajorUV = max(dMajorUV, 0.0001);
                 vec2 majorGrid = abs(fract(majorUV - 0.5) - 0.5) / dMajorUV;
                 float majorLine = 1.0 - min(min(majorGrid.x, majorGrid.y), 1.0);
 
-                float pulse = smoothstep(0.95, 1.0, sin(dist * 0.4 - uTime * 3.0));
+                // Pulse Wave
+                float pulse = sin(dist * 0.4 - uTime * 3.0);
+                pulse = smoothstep(0.95, 1.0, pulse);
 
+                // Combine
                 vec3 final = bgColor;
                 final = mix(final, colGrid, line * 0.4);
                 final = mix(final, colMajor, majorLine * 0.8);
-                final += vec3(1.0) * pulse * line; 
+                final += vec3(1.0) * pulse * line; // Additive white pulse
 
+                // Floor Fade to Black (Alpha)
                 float alpha = 1.0 - smoothstep(15.0, 60.0, dist);
                 FragColor = vec4(final, alpha);
 
             } else {
-                // LIGHTING
+                // === OBJECTS: WALLS & PLAYER ===
                 vec3 norm = normalize(vNormal);
                 vec3 viewDir = normalize(uPlayerPos - vWorldPos);
                 vec3 resultColor;
 
                 if (uIsInstanced) { 
+                    // -- WALLS (Metallic + Player Glow) --
+                    
+                    // 1. Directional Light (Moonlight)
+                    vec3 moonColor = vec3(0.4, 0.5, 0.8);
                     float diff = max(dot(norm, normalize(uLightDir)), 0.1);
+                    
+                    // 2. Point Light (Player Glow)
                     float dToPlayer = distance(vWorldPos, uPlayerPos);
+                    // Light falloff radius ~8 units
                     float atten = 1.0 / (1.0 + dToPlayer * dToPlayer * 0.15); 
                     vec3 playerGlow = vec3(0.0, 1.0, 1.0) * atten * 1.5; 
                     
+                    // 3. Specular Highlight (Shiny Walls)
                     vec3 halfDir = normalize(normalize(uLightDir) + viewDir);
                     float spec = pow(max(dot(norm, halfDir), 0.0), 32.0);
                     vec3 specular = vec3(1.0) * spec * 0.4;
 
-                    float rim = smoothstep(0.5, 1.0, 1.0 - max(dot(viewDir, norm), 0.0));
+                    // 4. Rim Light (Edge Glow)
+                    float rim = 1.0 - max(dot(viewDir, norm), 0.0);
+                    rim = smoothstep(0.5, 1.0, rim);
                     vec3 rimColor = vec3(0.0, 0.8, 1.0) * rim * 0.5;
 
+                    // Combine Wall Lighting
                     vec3 ambient = uColor.rgb * 0.1;
-                    vec3 diffuse = uColor.rgb * (diff * vec3(0.4, 0.5, 0.8));
-                    vec3 point = uColor.rgb * playerGlow;
+                    vec3 diffuse = uColor.rgb * (diff * moonColor);
+                    vec3 point = uColor.rgb * playerGlow; // Player lights up the wall color
                     
                     resultColor = ambient + diffuse + point + specular + rimColor;
+
                 } else {
+                    // -- PLAYER (Emissive) --
+                    // Player is bright and self-luminous
                     float diff = max(dot(norm, normalize(uLightDir)), 0.5);
                     resultColor = uColor.rgb * diff + (uColor.rgb * 0.4);
                 }
 
-                // FOG
-                float fogFactor = clamp(1.0 - exp(-pow(dist * 0.045, 2.0)), 0.0, 1.0);
+                // === VOLUMETRIC FOG ===
+                // Exponential squared fog
+                float fogDensity = 0.045;
+                float fogFactor = 1.0 - exp(-pow(dist * fogDensity, 2.0));
+                fogFactor = clamp(fogFactor, 0.0, 1.0);
+
+                // Mix geometry with background color
                 resultColor = mix(resultColor, bgColor, fogFactor);
 
                 FragColor = vec4(resultColor, uColor.a);
@@ -306,30 +256,18 @@
         function createProgram(vsSrc, fsSrc) {
             const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
             const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
+
+            // Check for shader errors
+            if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(vs));
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(fs));
+
             const p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
-            if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-                console.error(gl.getProgramInfoLog(p));
-                return null;
-            }
             return p;
         }
         const program = createProgram(vsSource, fsSource);
 
-        const loc = {
-            uModel: gl.getUniformLocation(program, "uModel"),
-            uView: gl.getUniformLocation(program, "uView"),
-            uProjection: gl.getUniformLocation(program, "uProjection"),
-            uIsInstanced: gl.getUniformLocation(program, "uIsInstanced"),
-            uInstanceScale: gl.getUniformLocation(program, "uInstanceScale"),
-            uColor: gl.getUniformLocation(program, "uColor"),
-            uIsGrid: gl.getUniformLocation(program, "uIsGrid"),
-            uPlayerPos: gl.getUniformLocation(program, "uPlayerPos"),
-            uLightDir: gl.getUniformLocation(program, "uLightDir"),
-            uTime: gl.getUniformLocation(program, "uTime"),
-        };
-
         // ==========================================
-        // 4. BUFFERS
+        // 3. BUFFERS
         // ==========================================
         const cubeVerts = new Float32Array([
             -0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1, 0, -0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1, 0, -0.5, 0.5, 0.5, 0, 1, 0,
@@ -353,7 +291,10 @@
         gl.enableVertexAttribArray(2);
         gl.vertexAttribDivisor(2, 1);
 
-        const floorVerts = new Float32Array([-100, 0, -100, 0, 1, 0, 100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0, -100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0, -100, 0, 100, 0, 1, 0]);
+        const floorVerts = new Float32Array([
+            -100, 0, -100, 0, 1, 0, 100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0,
+            -100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0, -100, 0, 100, 0, 1, 0
+        ]);
         const floorVAO = gl.createVertexArray();
         gl.bindVertexArray(floorVAO);
         const floorVBO = gl.createBuffer();
@@ -363,11 +304,21 @@
         gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12); gl.enableVertexAttribArray(1);
 
         // ==========================================
-        // 5. GAME LOOP
+        // 4. GAME LOOP
         // ==========================================
         let playerPos = vec3.fromValues(4.5, 0, 4.5);
         let playerAngle = 0;
         let camPos = vec3.fromValues(4.5, 7, 10);
+        const keys = { w: false, a: false, s: false, d: false };
+
+        window.addEventListener("keydown", e => {
+            const map = { 'KeyW': 'w', 'ArrowUp': 'w', 'KeyS': 's', 'ArrowDown': 's', 'KeyA': 'a', 'ArrowLeft': 'a', 'KeyD': 'd', 'ArrowRight': 'd' };
+            if (map[e.code]) { keys[map[e.code]] = true; uiKeys[map[e.code]].classList.add("active"); }
+        });
+        window.addEventListener("keyup", e => {
+            const map = { 'KeyW': 'w', 'ArrowUp': 'w', 'KeyS': 's', 'ArrowDown': 's', 'KeyA': 'a', 'ArrowLeft': 'a', 'KeyD': 'd', 'ArrowRight': 'd' };
+            if (map[e.code]) { keys[map[e.code]] = false; uiKeys[map[e.code]].classList.remove("active"); }
+        });
 
         function updateAndRender(time) {
             time *= 0.001;
@@ -393,6 +344,7 @@
                         const xEven = (gx % 2 === 0), zEven = (gz % 2 === 0);
                         if (!xEven && zEven) wSizeX = 1.0;
                         if (xEven && !zEven) wSizeZ = 1.0;
+                        // Collision Radius = Wall Size + Player Size
                         if (Math.abs(x - wx) < (wSizeX + 0.3) && Math.abs(z - wz) < (wSizeZ + 0.3)) return true;
                     }
                     return false;
@@ -409,12 +361,13 @@
             camPos[1] += (7.0 - camPos[1]) * 0.05;
             camPos[2] += (targetZ - camPos[2]) * 0.05;
 
-            // RENDER
-            gl.clearColor(0.01, 0.0, 0.02, 1.0); // Dark blue = context active
+            // Render
+            gl.clearColor(0.01, 0.0, 0.02, 1.0); // Match Fog Color
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             gl.enable(gl.DEPTH_TEST);
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
             gl.useProgram(program);
 
             const view = mat4.create();
@@ -424,28 +377,28 @@
             const projection = mat4.create();
             mat4.perspective(projection, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
 
-            gl.uniformMatrix4fv(loc.uView, false, view);
-            gl.uniformMatrix4fv(loc.uProjection, false, projection);
-            gl.uniform3fv(loc.uPlayerPos, playerPos);
-            gl.uniform3f(loc.uLightDir, 0.5, 0.8, 0.3);
-            gl.uniform1f(loc.uTime, time);
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uView"), false, view);
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uProjection"), false, projection);
+            gl.uniform3fv(gl.getUniformLocation(program, "uPlayerPos"), playerPos);
+            gl.uniform3f(gl.getUniformLocation(program, "uLightDir"), 0.5, 0.8, 0.3);
+            gl.uniform1f(gl.getUniformLocation(program, "uTime"), time);
 
             // 1. FLOOR
+            gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 1.0);
             const modelFloor = mat4.create();
             mat4.translate(modelFloor, modelFloor, [playerPos[0], -0.6, playerPos[2]]);
-            gl.uniformMatrix4fv(loc.uModel, false, modelFloor);
-            gl.uniform1i(loc.uIsGrid, true);
-            gl.uniform1i(loc.uIsInstanced, false);
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uModel"), false, modelFloor);
+            gl.uniform1i(gl.getUniformLocation(program, "uIsGrid"), true);
+            gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), false);
             gl.bindVertexArray(floorVAO);
             gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-            // 2. WALLS (Batched)
-            gl.uniform1i(loc.uIsGrid, false);
-            gl.uniform1i(loc.uIsInstanced, true);
-            gl.uniform4f(loc.uColor, 0.2, 0.25, 0.4, 1.0);
+            // 2. WALLS
+            gl.uniform1i(gl.getUniformLocation(program, "uIsGrid"), false);
+            gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), true);
+            gl.uniform4f(gl.getUniformLocation(program, "uColor"), 0.2, 0.25, 0.4, 1.0); // Metallic Blue-Grey
 
-            // Radius reduced for mobile performance
-            const visibleRadius = 14;
+            const visibleRadius = 22;
             const px = Math.round(playerPos[0] / GRID_SCALE);
             const pz = Math.round(playerPos[2] / GRID_SCALE);
 
@@ -463,35 +416,35 @@
             }
 
             gl.bindVertexArray(cubeVAO);
-
-            // Re-using bufferData is safer than subData on some mobile drivers if buffer size mismatch
             if (pillars.length) {
-                gl.uniform3f(loc.uInstanceScale, 1.0, 1.0, 1.0);
+                gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 1.0);
                 gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pillars), gl.DYNAMIC_DRAW);
                 gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, pillars.length / 3);
             }
             if (hWalls.length) {
-                gl.uniform3f(loc.uInstanceScale, 2.0, 1.0, 1.0);
+                gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 2.0, 1.0, 1.0);
                 gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(hWalls), gl.DYNAMIC_DRAW);
                 gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, hWalls.length / 3);
             }
             if (vWalls.length) {
-                gl.uniform3f(loc.uInstanceScale, 1.0, 1.0, 2.0);
+                gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 2.0);
                 gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vWalls), gl.DYNAMIC_DRAW);
                 gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, vWalls.length / 3);
             }
 
             // 3. PLAYER
-            gl.uniform1i(loc.uIsInstanced, false);
+            gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), false);
+            gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 1.0);
             const modelPlayer = mat4.create();
             mat4.translate(modelPlayer, modelPlayer, playerPos);
             mat4.rotateY(modelPlayer, modelPlayer, playerAngle);
             mat4.scale(modelPlayer, modelPlayer, [0.4, 0.3, 0.6]);
-            gl.uniformMatrix4fv(loc.uModel, false, modelPlayer);
-            gl.uniform4f(loc.uColor, 0.0, 1.0, 1.0, 1.0);
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uModel"), false, modelPlayer);
+            gl.uniform4f(gl.getUniformLocation(program, "uColor"), 0.0, 1.0, 1.0, 1.0); // Cyan
+            gl.bindVertexArray(cubeVAO);
             gl.drawArrays(gl.TRIANGLES, 0, 36);
 
             requestAnimationFrame(updateAndRender);
@@ -502,7 +455,9 @@
             let gz = Math.round(z / GRID_SCALE);
             return isWall(gx, gz);
         };
-        while (checkSpawn(playerPos[0], playerPos[2])) { playerPos[0] += GRID_SCALE; }
+        while (checkSpawn(playerPos[0], playerPos[2])) {
+            playerPos[0] += GRID_SCALE;
+        }
 
         requestAnimationFrame(updateAndRender);
     </script>
