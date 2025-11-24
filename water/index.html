@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Golden Hour Water</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            touch-action: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            image-rendering: linear-gradient;
+        }
+
+        #ui {
+            position: absolute;
+            bottom: 40px;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+            color: rgba(255, 255, 255, 0.9);
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 14px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            text-shadow: 0 2px 4px #000;
+        }
+
+        .sub {
+            font-size: 10px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="glCanvas"></canvas>
+    <div id="ui">
+        High Contrast Reflections<br>
+        <span class="sub">Look for the Gold/Orange light on the waves</span>
+    </div>
+
+    <!-- VERTEX SHADER -->
+    <script id="vs" type="x-shader/x-vertex">#version 300 es
+        in vec4 position;
+        out vec2 vUv;
+        void main() {
+            vUv = position.xy * 0.5 + 0.5;
+            gl_Position = position;
+        }
+    </script>
+
+    <!-- PHYSICS SHADER (Simulation) -->
+    <script id="fs-sim" type="x-shader/x-fragment">#version 300 es
+        precision highp float;
+        
+        uniform sampler2D uTexture;
+        uniform vec2 uMouse;
+        uniform float uMouseDown;
+        uniform float uTime;
+        uniform vec2 uRes;
+
+        in vec2 vUv;
+        out vec4 fragColor;
+
+        void main() {
+            vec2 texel = 1.0 / uRes;
+            
+            float p = texture(uTexture, vUv).r;
+            float prev = texture(uTexture, vUv).g;
+
+            float n = texture(uTexture, vUv + vec2(0.0, texel.y)).r;
+            float s = texture(uTexture, vUv - vec2(0.0, texel.y)).r;
+            float e = texture(uTexture, vUv + vec2(texel.x, 0.0)).r;
+            float w = texture(uTexture, vUv - vec2(texel.x, 0.0)).r;
+
+            float next = ((n + s + e + w) * 0.5) - prev;
+            next *= 0.97; // Damping
+
+            // Mouse
+            float d = distance(vUv, uMouse);
+            if (uMouseDown > 0.5 && d < 0.04) {
+                next -= 0.15 * (1.0 - smoothstep(0.0, 0.04, d));
+            }
+
+            // Rain
+            if (fract(uTime * 6.0) > 0.3) {
+                vec2 dropPos = vec2(
+                    fract(sin(uTime * 45.0) * 7845.23),
+                    fract(cos(uTime * 23.0) * 3982.12)
+                );
+                if (distance(vUv, dropPos) < 0.01) {
+                    next -= 0.15;
+                }
+            }
+
+            next = clamp(next, -1.0, 1.0);
+            fragColor = vec4(next, p, 0.0, 1.0);
+        }
+    </script>
+
+    <!-- RENDER SHADER (High Contrast Environment) -->
+    <script id="fs-render" type="x-shader/x-fragment">#version 300 es
+        precision highp float;
+
+        uniform sampler2D uTexture;
+        uniform vec2 uRes;
+        in vec2 vUv;
+        out vec4 fragColor;
+
+        // --- PROCEDURAL SKY GENERATOR ---
+        // Generates a sunset sky map based on reflection direction
+        vec3 getEnvironmentColor(vec3 dir) {
+            // dir.z is "up/down". Since we look down, reflection usually points up (z > 0).
+            // Closer to 0 = Horizon. Closer to 1 = Zenith (Straight up).
+            
+            float horizonFactor = 1.0 - dir.z; // 1.0 at horizon, 0.0 at top
+            
+            // 1. Deep Sky (Zenith)
+            vec3 deepSpace = vec3(0.05, 0.0, 0.15); // Dark Purple
+            
+            // 2. Horizon Glow
+            vec3 horizonColor = vec3(1.0, 0.4, 0.0); // Bright Orange
+            
+            // 3. Mix Sky
+            // Non-linear mix to keep the orange near the "water surface" angle
+            vec3 sky = mix(deepSpace, horizonColor, pow(horizonFactor, 3.0));
+            
+            // 4. The Sun (A bright spot in the reflection)
+            // Let's put a sun at a specific angle
+            vec3 sunDir = normalize(vec3(-0.5, 0.5, 0.1)); // Low on horizon
+            float sunMatch = max(dot(dir, sunDir), 0.0);
+            
+            // Sharp sun disk + soft glow
+            float sunDisk = step(0.995, sunMatch); // Hard edge
+            float sunGlow = pow(sunMatch, 20.0);   // Soft edge
+            
+            return sky + (vec3(1.0, 0.9, 0.6) * (sunDisk + sunGlow));
+        }
+
+        void main() {
+            vec2 texel = 1.0 / uRes;
+            float h = texture(uTexture, vUv).r;
+            
+            // --- NORMALS ---
+            // decreased Z factor (0.1) makes waves steeper to catch more "Horizon" reflection
+            float hR = texture(uTexture, vUv + vec2(texel.x, 0.0)).r;
+            float hU = texture(uTexture, vUv + vec2(0.0, texel.y)).r;
+            vec3 normal = normalize(vec3(h - hR, h - hU, 0.1)); 
+
+            // --- REFRACTION & FLOOR ---
+            // Distort the pool floor
+            vec2 refUV = vUv + normal.xy * 0.05;
+            
+            // Dark Pool Tiles (Darker tiles make reflections pop more)
+            vec2 tileUV = refUV * 6.0;
+            vec2 grid = abs(fract(tileUV - 0.5) - 0.5) / fwidth(tileUV);
+            float line = 1.0 - min(min(grid.x, grid.y), 1.0);
+            vec3 tileCol = vec3(0.05, 0.2, 0.3); // Dark Teal
+            vec3 groutCol = vec3(0.01, 0.01, 0.01); // Black Grout
+            vec3 floorColor = mix(tileCol, groutCol, line * 0.5);
+
+            // Fake Caustics (Bright patterns on floor)
+            float caustics = clamp((h - texture(uTexture, vUv + normal.xy * 0.06).r) * 8.0, 0.0, 1.0);
+            floorColor += vec3(0.3, 0.5, 0.6) * caustics; // Add light to floor
+
+            // --- REFLECTION ---
+            // Calculate reflection vector assuming camera looks straight down (0,0,-1)
+            vec3 viewDir = vec3(0.0, 0.0, 1.0); 
+            vec3 reflectDir = reflect(-viewDir, normal);
+            
+            // Get Sky Color
+            vec3 envColor = getEnvironmentColor(reflectDir);
+
+            // --- FRESNEL ---
+            // How much reflection vs refraction?
+            // At steep angles (edges of waves), reflection is 100%
+            float fresnel = 0.1 + 0.9 * pow(1.0 - dot(viewDir, normal), 4.0);
+            
+            // --- COMPOSITION ---
+            // Mix Floor and Sky
+            vec3 finalColor = mix(floorColor, envColor, fresnel);
+            
+            // Add subtle specular highlight from overhead light
+            float spec = pow(max(dot(normal, normalize(vec3(0.2, 0.2, 1.0))), 0.0), 60.0);
+            finalColor += vec3(1.0) * spec * 0.5;
+
+            fragColor = vec4(finalColor, 1.0);
+        }
+    </script>
+
+    <script>
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl2', { alpha: false, depth: false, antialias: false });
+
+        if (!gl) document.body.innerHTML = "<h1>WebGL 2 Required</h1>";
+        gl.getExtension('EXT_color_buffer_float');
+
+        const DOWNSCALE = 0.5;
+
+        function resize() {
+            canvas.width = window.innerWidth * DOWNSCALE;
+            canvas.height = window.innerHeight * DOWNSCALE;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function createProgram(vsSrc, fsSrc) {
+            const vs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vs, vsSrc);
+            gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fs, fsSrc);
+            gl.compileShader(fs);
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+                console.error("Shader Error:", gl.getShaderInfoLog(fs));
+            }
+            const prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+            return prog;
+        }
+
+        const simProg = createProgram(document.getElementById('vs').text, document.getElementById('fs-sim').text);
+        const renderProg = createProgram(document.getElementById('vs').text, document.getElementById('fs-render').text);
+
+        function createTexture() {
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, canvas.width, canvas.height, 0, gl.RGBA, gl.HALF_FLOAT, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            return tex;
+        }
+
+        let fbo1 = gl.createFramebuffer();
+        let tex1 = createTexture();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo1);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex1, 0);
+
+        let fbo2 = gl.createFramebuffer();
+        let tex2 = createTexture();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo2);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex2, 0);
+
+        let read = { fbo: fbo1, tex: tex1 };
+        let write = { fbo: fbo2, tex: tex2 };
+
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW);
+
+        let mouse = { x: 0.5, y: 0.5, down: 0 };
+        let time = 0;
+
+        function updateMouse(clientX, clientY) {
+            mouse.x = clientX / window.innerWidth;
+            mouse.y = 1.0 - (clientY / window.innerHeight);
+        }
+
+        window.addEventListener('mousemove', e => updateMouse(e.clientX, e.clientY));
+        window.addEventListener('mousedown', () => mouse.down = 1);
+        window.addEventListener('mouseup', () => mouse.down = 0);
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            updateMouse(e.touches[0].clientX, e.touches[0].clientY);
+            mouse.down = 1;
+        }, { passive: false });
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            updateMouse(e.touches[0].clientX, e.touches[0].clientY);
+        }, { passive: false });
+        window.addEventListener('touchend', () => mouse.down = 0);
+
+        function loop() {
+            time += 0.016;
+
+            // 1. Physics
+            gl.useProgram(simProg);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, write.fbo);
+            gl.viewport(0, 0, canvas.width, canvas.height);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, read.tex);
+            gl.uniform1i(gl.getUniformLocation(simProg, 'uTexture'), 0);
+            gl.uniform2f(gl.getUniformLocation(simProg, 'uRes'), canvas.width, canvas.height);
+            gl.uniform2f(gl.getUniformLocation(simProg, 'uMouse'), mouse.x, mouse.y);
+            gl.uniform1f(gl.getUniformLocation(simProg, 'uMouseDown'), mouse.down);
+            gl.uniform1f(gl.getUniformLocation(simProg, 'uTime'), time);
+
+            const posLoc = gl.getAttribLocation(simProg, 'position');
+            gl.enableVertexAttribArray(posLoc);
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // 2. Render
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.useProgram(renderProg);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, write.tex);
+            gl.uniform1i(gl.getUniformLocation(renderProg, 'uTexture'), 0);
+            gl.uniform2f(gl.getUniformLocation(renderProg, 'uRes'), canvas.width, canvas.height);
+
+            const posLoc2 = gl.getAttribLocation(renderProg, 'position');
+            gl.enableVertexAttribArray(posLoc2);
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.vertexAttribPointer(posLoc2, 2, gl.FLOAT, false, 0, 0);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // Swap
+            let temp = read;
+            read = write;
+            write = temp;
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+    </script>
+</body>
+
+</html>
