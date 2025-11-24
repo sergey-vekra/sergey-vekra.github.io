@@ -4,18 +4,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D Neon Maze - Mobile Ready</title>
+    <title>3D Neon Maze - Mobile Final</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background: #020005;
+            background: #000;
             font-family: monospace;
             user-select: none;
             -webkit-user-select: none;
-            /* Safari touch fix */
             touch-action: none;
-            /* Prevent browser zooming/scrolling */
+            /* Critical for mobile controls */
         }
 
         canvas {
@@ -43,16 +42,15 @@
         /* --- MOBILE CONTROLS --- */
         #mobile-controls {
             position: absolute;
-            bottom: 20px;
+            bottom: 30px;
             left: 0;
             width: 100%;
-            height: 120px;
+            height: 140px;
             display: flex;
             justify-content: space-between;
             padding: 0 30px;
             box-sizing: border-box;
             pointer-events: none;
-            /* Let touches pass through empty space */
             z-index: 20;
         }
 
@@ -64,33 +62,32 @@
         }
 
         .d-btn {
-            width: 70px;
-            height: 70px;
+            width: 80px;
+            height: 80px;
             border: 2px solid rgba(0, 255, 204, 0.5);
             background: rgba(0, 20, 20, 0.4);
             border-radius: 50%;
             color: #00ffcc;
-            font-size: 24px;
+            font-size: 30px;
             font-weight: bold;
             display: flex;
             justify-content: center;
             align-items: center;
             box-shadow: 0 0 10px rgba(0, 255, 204, 0.1);
-            transition: all 0.1s;
-            user-select: none;
+            transition: transform 0.1s;
             cursor: pointer;
-            backdrop-filter: blur(2px);
+            backdrop-filter: blur(4px);
+            -webkit-tap-highlight-color: transparent;
         }
 
         .d-btn:active,
         .d-btn.pressed {
-            background: rgba(0, 255, 204, 0.2);
+            background: rgba(0, 255, 204, 0.3);
+            border-color: #fff;
+            transform: scale(0.9);
             box-shadow: 0 0 20px rgba(0, 255, 204, 0.6);
-            border-color: #00ffcc;
-            transform: scale(0.95);
         }
 
-        /* Hide specific key indicators on really small screens */
         @media (max-width: 600px) {
             #keys-hint {
                 display: none;
@@ -111,32 +108,29 @@
 
     <!-- TOUCH CONTROLS -->
     <div id="mobile-controls">
-        <!-- Left Thumb: Steering -->
         <div class="control-group">
             <div class="d-btn" id="btn-left" data-key="a">◄</div>
             <div class="d-btn" id="btn-right" data-key="d">►</div>
         </div>
-
-        <!-- Right Thumb: Throttle -->
         <div class="control-group" style="flex-direction: column; gap: 10px;">
-            <div class="d-btn" id="btn-up" data-key="w" style="height:60px; width:60px;">▲</div>
-            <div class="d-btn" id="btn-down" data-key="s" style="height:60px; width:60px;">▼</div>
+            <div class="d-btn" id="btn-up" data-key="w" style="height:65px;">▲</div>
+            <div class="d-btn" id="btn-down" data-key="s" style="height:65px;">▼</div>
         </div>
     </div>
 
     <canvas id="glCanvas"></canvas>
 
     <script>
-        // ==========================================
-        // 0. SETUP
-        // ==========================================
         if (typeof glMatrix === 'undefined') throw new Error("gl-matrix not loaded");
         const { mat4, vec3 } = glMatrix;
         const canvas = document.getElementById("glCanvas");
         const gl = canvas.getContext("webgl2");
         const uiPos = document.getElementById("pos");
 
-        if (!gl) alert("WebGL2 not supported");
+        if (!gl) {
+            document.body.innerHTML = "<h1 style='color:white; text-align:center; margin-top:50px;'>WebGL2 Not Supported</h1>";
+            throw new Error("WebGL2 not supported");
+        }
 
         function resize() {
             canvas.width = window.innerWidth;
@@ -144,17 +138,14 @@
             gl.viewport(0, 0, canvas.width, canvas.height);
         }
         window.addEventListener("resize", resize);
-
-        // Prevent context menu on right click/long press
         window.addEventListener("contextmenu", e => e.preventDefault());
         resize();
 
         // ==========================================
-        // 1. INPUT HANDLING (Keyboard + Touch)
+        // 1. INPUT HANDLING
         // ==========================================
         const keys = { w: false, a: false, s: false, d: false };
 
-        // Keyboard Logic
         window.addEventListener("keydown", e => {
             const map = { 'KeyW': 'w', 'ArrowUp': 'w', 'KeyS': 's', 'ArrowDown': 's', 'KeyA': 'a', 'ArrowLeft': 'a', 'KeyD': 'd', 'ArrowRight': 'd' };
             if (map[e.code]) keys[map[e.code]] = true;
@@ -164,30 +155,27 @@
             if (map[e.code]) keys[map[e.code]] = false;
         });
 
-        // Touch Logic
-        const touchBtns = document.querySelectorAll('.d-btn');
-
-        touchBtns.forEach(btn => {
+        // Touch handling
+        document.querySelectorAll('.d-btn').forEach(btn => {
             const key = btn.dataset.key;
 
-            // Touch Start
-            btn.addEventListener('touchstart', (e) => {
-                e.preventDefault(); // Stop mouse emulation
+            const press = (e) => {
+                if (e.cancelable) e.preventDefault();
                 keys[key] = true;
                 btn.classList.add('pressed');
-            }, { passive: false });
-
-            // Touch End
-            btn.addEventListener('touchend', (e) => {
-                e.preventDefault();
+            };
+            const release = (e) => {
+                if (e.cancelable) e.preventDefault();
                 keys[key] = false;
                 btn.classList.remove('pressed');
-            }, { passive: false });
+            };
 
-            // Mouse fallback for testing on desktop
-            btn.addEventListener('mousedown', () => { keys[key] = true; btn.classList.add('pressed'); });
-            btn.addEventListener('mouseup', () => { keys[key] = false; btn.classList.remove('pressed'); });
-            btn.addEventListener('mouseleave', () => { keys[key] = false; btn.classList.remove('pressed'); });
+            btn.addEventListener('touchstart', press, { passive: false });
+            btn.addEventListener('touchend', release, { passive: false });
+            // Mouse fallback
+            btn.addEventListener('mousedown', press);
+            btn.addEventListener('mouseup', release);
+            btn.addEventListener('mouseleave', release);
         });
 
         // ==========================================
@@ -254,7 +242,7 @@
             vec3 bgColor = vec3(0.01, 0.0, 0.02); 
 
             if (uIsGrid) {
-                // Grid
+                // NEON GRID
                 vec3 colGrid = vec3(0.0, 1.0, 1.0);
                 vec3 colMajor = vec3(1.0, 0.0, 1.0);
                 vec2 uv = vWorldPos.xz;
@@ -279,13 +267,12 @@
                 FragColor = vec4(final, alpha);
 
             } else {
-                // Objects
+                // LIGHTING
                 vec3 norm = normalize(vNormal);
                 vec3 viewDir = normalize(uPlayerPos - vWorldPos);
                 vec3 resultColor;
 
                 if (uIsInstanced) { 
-                    // Walls
                     float diff = max(dot(norm, normalize(uLightDir)), 0.1);
                     float dToPlayer = distance(vWorldPos, uPlayerPos);
                     float atten = 1.0 / (1.0 + dToPlayer * dToPlayer * 0.15); 
@@ -304,12 +291,11 @@
                     
                     resultColor = ambient + diffuse + point + specular + rimColor;
                 } else {
-                    // Player
                     float diff = max(dot(norm, normalize(uLightDir)), 0.5);
                     resultColor = uColor.rgb * diff + (uColor.rgb * 0.4);
                 }
 
-                // Fog
+                // FOG
                 float fogFactor = clamp(1.0 - exp(-pow(dist * 0.045, 2.0)), 0.0, 1.0);
                 resultColor = mix(resultColor, bgColor, fogFactor);
 
@@ -321,9 +307,26 @@
             const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
             const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
             const p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
+            if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+                console.error(gl.getProgramInfoLog(p));
+                return null;
+            }
             return p;
         }
         const program = createProgram(vsSource, fsSource);
+
+        const loc = {
+            uModel: gl.getUniformLocation(program, "uModel"),
+            uView: gl.getUniformLocation(program, "uView"),
+            uProjection: gl.getUniformLocation(program, "uProjection"),
+            uIsInstanced: gl.getUniformLocation(program, "uIsInstanced"),
+            uInstanceScale: gl.getUniformLocation(program, "uInstanceScale"),
+            uColor: gl.getUniformLocation(program, "uColor"),
+            uIsGrid: gl.getUniformLocation(program, "uIsGrid"),
+            uPlayerPos: gl.getUniformLocation(program, "uPlayerPos"),
+            uLightDir: gl.getUniformLocation(program, "uLightDir"),
+            uTime: gl.getUniformLocation(program, "uTime"),
+        };
 
         // ==========================================
         // 4. BUFFERS
@@ -350,9 +353,7 @@
         gl.enableVertexAttribArray(2);
         gl.vertexAttribDivisor(2, 1);
 
-        const floorVerts = new Float32Array([
-            -100, 0, -100, 0, 1, 0, 100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0, -100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0, -100, 0, 100, 0, 1, 0
-        ]);
+        const floorVerts = new Float32Array([-100, 0, -100, 0, 1, 0, 100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0, -100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0, -100, 0, 100, 0, 1, 0]);
         const floorVAO = gl.createVertexArray();
         gl.bindVertexArray(floorVAO);
         const floorVBO = gl.createBuffer();
@@ -408,13 +409,12 @@
             camPos[1] += (7.0 - camPos[1]) * 0.05;
             camPos[2] += (targetZ - camPos[2]) * 0.05;
 
-            // Render
-            gl.clearColor(0.01, 0.0, 0.02, 1.0);
+            // RENDER
+            gl.clearColor(0.01, 0.0, 0.02, 1.0); // Dark blue = context active
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             gl.enable(gl.DEPTH_TEST);
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
             gl.useProgram(program);
 
             const view = mat4.create();
@@ -424,30 +424,31 @@
             const projection = mat4.create();
             mat4.perspective(projection, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
 
-            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uView"), false, view);
-            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uProjection"), false, projection);
-            gl.uniform3fv(gl.getUniformLocation(program, "uPlayerPos"), playerPos);
-            gl.uniform3f(gl.getUniformLocation(program, "uLightDir"), 0.5, 0.8, 0.3);
-            gl.uniform1f(gl.getUniformLocation(program, "uTime"), time);
+            gl.uniformMatrix4fv(loc.uView, false, view);
+            gl.uniformMatrix4fv(loc.uProjection, false, projection);
+            gl.uniform3fv(loc.uPlayerPos, playerPos);
+            gl.uniform3f(loc.uLightDir, 0.5, 0.8, 0.3);
+            gl.uniform1f(loc.uTime, time);
 
             // 1. FLOOR
-            gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 1.0);
             const modelFloor = mat4.create();
             mat4.translate(modelFloor, modelFloor, [playerPos[0], -0.6, playerPos[2]]);
-            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uModel"), false, modelFloor);
-            gl.uniform1i(gl.getUniformLocation(program, "uIsGrid"), true);
-            gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), false);
+            gl.uniformMatrix4fv(loc.uModel, false, modelFloor);
+            gl.uniform1i(loc.uIsGrid, true);
+            gl.uniform1i(loc.uIsInstanced, false);
             gl.bindVertexArray(floorVAO);
             gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-            // 2. WALLS
-            gl.uniform1i(gl.getUniformLocation(program, "uIsGrid"), false);
-            gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), true);
-            gl.uniform4f(gl.getUniformLocation(program, "uColor"), 0.2, 0.25, 0.4, 1.0);
+            // 2. WALLS (Batched)
+            gl.uniform1i(loc.uIsGrid, false);
+            gl.uniform1i(loc.uIsInstanced, true);
+            gl.uniform4f(loc.uColor, 0.2, 0.25, 0.4, 1.0);
 
-            const visibleRadius = 22;
+            // Radius reduced for mobile performance
+            const visibleRadius = 14;
             const px = Math.round(playerPos[0] / GRID_SCALE);
             const pz = Math.round(playerPos[2] / GRID_SCALE);
+
             const pillars = [], hWalls = [], vWalls = [];
             for (let x = px - visibleRadius; x <= px + visibleRadius; x++) {
                 for (let z = pz - visibleRadius; z <= pz + visibleRadius; z++) {
@@ -462,35 +463,35 @@
             }
 
             gl.bindVertexArray(cubeVAO);
+
+            // Re-using bufferData is safer than subData on some mobile drivers if buffer size mismatch
             if (pillars.length) {
-                gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 1.0);
+                gl.uniform3f(loc.uInstanceScale, 1.0, 1.0, 1.0);
                 gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pillars), gl.DYNAMIC_DRAW);
                 gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, pillars.length / 3);
             }
             if (hWalls.length) {
-                gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 2.0, 1.0, 1.0);
+                gl.uniform3f(loc.uInstanceScale, 2.0, 1.0, 1.0);
                 gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(hWalls), gl.DYNAMIC_DRAW);
                 gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, hWalls.length / 3);
             }
             if (vWalls.length) {
-                gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 2.0);
+                gl.uniform3f(loc.uInstanceScale, 1.0, 1.0, 2.0);
                 gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vWalls), gl.DYNAMIC_DRAW);
                 gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, vWalls.length / 3);
             }
 
             // 3. PLAYER
-            gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), false);
-            gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 1.0);
+            gl.uniform1i(loc.uIsInstanced, false);
             const modelPlayer = mat4.create();
             mat4.translate(modelPlayer, modelPlayer, playerPos);
             mat4.rotateY(modelPlayer, modelPlayer, playerAngle);
             mat4.scale(modelPlayer, modelPlayer, [0.4, 0.3, 0.6]);
-            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uModel"), false, modelPlayer);
-            gl.uniform4f(gl.getUniformLocation(program, "uColor"), 0.0, 1.0, 1.0, 1.0);
-            gl.bindVertexArray(cubeVAO);
+            gl.uniformMatrix4fv(loc.uModel, false, modelPlayer);
+            gl.uniform4f(loc.uColor, 0.0, 1.0, 1.0, 1.0);
             gl.drawArrays(gl.TRIANGLES, 0, 36);
 
             requestAnimationFrame(updateAndRender);
@@ -501,9 +502,7 @@
             let gz = Math.round(z / GRID_SCALE);
             return isWall(gx, gz);
         };
-        while (checkSpawn(playerPos[0], playerPos[2])) {
-            playerPos[0] += GRID_SCALE;
-        }
+        while (checkSpawn(playerPos[0], playerPos[2])) { playerPos[0] += GRID_SCALE; }
 
         requestAnimationFrame(updateAndRender);
     </script>
