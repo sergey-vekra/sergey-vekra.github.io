@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>3D Neon Maze - Fixed</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #020005;
+            /* Almost black */
+            font-family: monospace;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00ffcc;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            pointer-events: none;
+            border-left: 4px solid #d400ff;
+            line-height: 1.5em;
+            box-shadow: 0 0 15px rgba(212, 0, 255, 0.3);
+            border-radius: 0 10px 10px 0;
+        }
+
+        .key-indicator {
+            display: inline-block;
+            width: 20px;
+            text-align: center;
+            background: #222;
+            color: #555;
+            border-radius: 4px;
+            margin: 0 2px;
+            font-weight: bold;
+        }
+
+        .active {
+            background: #00ffcc;
+            color: #000;
+            box-shadow: 0 0 8px #00ffcc;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/3.4.2/gl-matrix-min.js"></script>
+</head>
+
+<body>
+    <div id="ui">
+        <b>// NEON MAZE RELOADED //</b><br>
+        COORD: <span id="pos">0, 0</span><br>
+        <div style="margin-top: 10px;">
+            THRUST:
+            <span id="k-w" class="key-indicator">W</span>
+            <span id="k-a" class="key-indicator">A</span>
+            <span id="k-s" class="key-indicator">S</span>
+            <span id="k-d" class="key-indicator">D</span>
+        </div>
+    </div>
+    <canvas id="glCanvas"></canvas>
+
+    <script>
+        // ==========================================
+        // 0. SETUP & ERROR HANDLING
+        // ==========================================
+        if (typeof glMatrix === 'undefined') throw new Error("gl-matrix not loaded");
+        const { mat4, vec3 } = glMatrix;
+        const canvas = document.getElementById("glCanvas");
+        const gl = canvas.getContext("webgl2");
+        const uiPos = document.getElementById("pos");
+        const uiKeys = {
+            "w": document.getElementById("k-w"), "a": document.getElementById("k-a"),
+            "s": document.getElementById("k-s"), "d": document.getElementById("k-d"),
+        };
+
+        if (!gl) {
+            document.body.innerHTML = "<h1 style='color:white'>WebGL2 Not Supported</h1>";
+            throw new Error("WebGL2 not supported");
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        window.addEventListener("resize", resize);
+        window.addEventListener("click", () => window.focus());
+        resize();
+
+        // ==========================================
+        // 1. MAZE LOGIC
+        // ==========================================
+        const GRID_SCALE = 1.5;
+
+        function hash(x, y) {
+            let n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+            return n - Math.floor(n);
+        }
+
+        function isWall(gx, gy) {
+            const cx = (gx % 2 + 2) % 2;
+            const cy = (gy % 2 + 2) % 2;
+            const xEven = (cx === 0);
+            const yEven = (cy === 0);
+            if (xEven && yEven) return true;
+            if (!xEven && !yEven) return false;
+            if (!xEven && yEven) return (hash(gx, gy + 1) >= 0.5);
+            if (xEven && !yEven) return (hash(gx + 1, gy) < 0.5);
+            return false;
+        }
+
+        // ==========================================
+        // 2. SHADERS (With Debugging)
+        // ==========================================
+        const vsSource = `#version 300 es
+        layout(location = 0) in vec3 aPos;
+        layout(location = 1) in vec3 aNormal;
+        layout(location = 2) in vec3 aInstancePos; 
+
+        uniform mat4 uModel; 
+        uniform mat4 uView;
+        uniform mat4 uProjection;
+        uniform bool uIsInstanced; 
+        uniform vec3 uInstanceScale;
+        
+        out vec3 vNormal;
+        out vec3 vWorldPos;
+
+        void main() {
+            vec3 worldPos;
+            if (uIsInstanced) {
+                // Scale first, then move to instance position
+                worldPos = (aPos * uInstanceScale) + aInstancePos;
+            } else {
+                worldPos = vec3(uModel * vec4(aPos, 1.0));
+            }
+            vWorldPos = worldPos;
+            vNormal = aNormal;
+            gl_Position = uProjection * uView * vec4(worldPos, 1.0);
+        }`;
+
+        const fsSource = `#version 300 es
+        precision highp float;
+
+        in vec3 vNormal;
+        in vec3 vWorldPos;
+
+        uniform vec4 uColor;
+        uniform vec3 uLightDir;
+        uniform bool uIsGrid;
+        uniform vec3 uPlayerPos;
+        uniform float uTime; 
+
+        out vec4 FragColor;
+
+        void main() {
+            float dist = distance(vWorldPos.xz, uPlayerPos.xz);
+            vec4 finalColor;
+
+            if (uIsGrid) {
+                // --- GRID LOGIC ---
+                vec3 bg = vec3(0.02, 0.0, 0.05);
+                vec3 colGrid = vec3(0.0, 1.0, 0.9);
+                vec3 colMajor = vec3(0.8, 0.0, 1.0);
+
+                vec2 uv = vWorldPos.xz;
+                vec2 dUV = fwidth(uv);
+                // Safety check to prevent divide by zero on flat surfaces
+                dUV = max(dUV, 0.0001); 
+
+                // Minor Grid
+                vec2 grid = abs(fract(uv - 0.5) - 0.5) / dUV;
+                float line = 1.0 - min(min(grid.x, grid.y), 1.0);
+                
+                // Major Grid
+                vec2 majorUV = uv / 10.0;
+                vec2 dMajorUV = fwidth(majorUV); 
+                dMajorUV = max(dMajorUV, 0.0001);
+                
+                vec2 majorGrid = abs(fract(majorUV - 0.5) - 0.5) / dMajorUV;
+                float majorLine = 1.0 - min(min(majorGrid.x, majorGrid.y), 1.0);
+
+                // Pulse
+                float pulse = sin(dist * 0.4 - uTime * 3.0);
+                pulse = smoothstep(0.9, 1.0, pulse);
+
+                vec3 c = bg;
+                c = mix(c, colGrid, line * 0.4);
+                c = mix(c, colMajor, majorLine * 1.0);
+                c += vec3(1.0) * pulse * line;
+
+                // Distance Fade
+                float alpha = 1.0 - smoothstep(10.0, 60.0, dist);
+                finalColor = vec4(c, alpha);
+            } else {
+                // --- WALL LIGHTING ---
+                vec3 norm = normalize(vNormal);
+                float diff = max(dot(norm, normalize(uLightDir)), 0.2);
+                vec3 c = uColor.rgb * diff;
+                
+                // Rim Light
+                float rim = 1.0 - max(dot(vec3(0,1,0), norm), 0.0);
+                c += uColor.rgb * rim * 0.3;
+
+                // Fog
+                float fogFactor = clamp((dist - 15.0) / (50.0 - 15.0), 0.0, 1.0);
+                vec3 fogColor = vec3(0.02, 0.0, 0.05);
+                c = mix(c, fogColor, fogFactor);
+
+                finalColor = vec4(c, uColor.a);
+            }
+            FragColor = finalColor;
+        }`;
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                alert("Shader Error:\n" + gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function createProgram(vsSrc, fsSrc) {
+            const vs = createShader(gl, gl.VERTEX_SHADER, vsSrc);
+            const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSrc);
+            if (!vs || !fs) return null;
+
+            const p = gl.createProgram();
+            gl.attachShader(p, vs);
+            gl.attachShader(p, fs);
+            gl.linkProgram(p);
+
+            if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+                alert("Program Link Error:\n" + gl.getProgramInfoLog(p));
+                return null;
+            }
+            return p;
+        }
+        const program = createProgram(vsSource, fsSource);
+
+        // ==========================================
+        // 3. BUFFERS
+        // ==========================================
+        // 1x1 Unit Cube with Normals
+        const cubeVerts = new Float32Array([
+            -0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1, 0, -0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1, 0, -0.5, 0.5, 0.5, 0, 1, 0,
+            -0.5, -0.5, 0.5, 0, 0, 1, 0.5, -0.5, 0.5, 0, 0, 1, 0.5, 0.5, 0.5, 0, 0, 1, -0.5, -0.5, 0.5, 0, 0, 1, 0.5, 0.5, 0.5, 0, 0, 1, -0.5, 0.5, 0.5, 0, 0, 1,
+            0.5, -0.5, 0.5, 1, 0, 0, 0.5, -0.5, -0.5, 1, 0, 0, 0.5, 0.5, -0.5, 1, 0, 0, 0.5, -0.5, 0.5, 1, 0, 0, 0.5, 0.5, -0.5, 1, 0, 0, 0.5, 0.5, 0.5, 1, 0, 0,
+            -0.5, -0.5, -0.5, 0, 0, -1, -0.5, 0.5, -0.5, 0, 0, -1, 0.5, 0.5, -0.5, 0, 0, -1, -0.5, -0.5, -0.5, 0, 0, -1, 0.5, 0.5, -0.5, 0, 0, -1, 0.5, -0.5, -0.5, 0, 0, -1,
+            -0.5, -0.5, -0.5, -1, 0, 0, -0.5, -0.5, 0.5, -1, 0, 0, -0.5, 0.5, 0.5, -1, 0, 0, -0.5, -0.5, -0.5, -1, 0, 0, -0.5, 0.5, 0.5, -1, 0, 0, -0.5, 0.5, -0.5, -1, 0, 0,
+        ]);
+        const cubeVAO = gl.createVertexArray();
+        gl.bindVertexArray(cubeVAO);
+        const cubeVBO = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVBO);
+        gl.bufferData(gl.ARRAY_BUFFER, cubeVerts, gl.STATIC_DRAW);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0); gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12); gl.enableVertexAttribArray(1);
+
+        const instanceVBO = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
+        gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 12, 0);
+        gl.enableVertexAttribArray(2);
+        gl.vertexAttribDivisor(2, 1);
+
+        // Floor Quad
+        const floorVerts = new Float32Array([
+            -100, 0, -100, 0, 1, 0, 100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0,
+            -100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0, -100, 0, 100, 0, 1, 0
+        ]);
+        const floorVAO = gl.createVertexArray();
+        gl.bindVertexArray(floorVAO);
+        const floorVBO = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, floorVBO);
+        gl.bufferData(gl.ARRAY_BUFFER, floorVerts, gl.STATIC_DRAW);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0); gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12); gl.enableVertexAttribArray(1);
+
+        // ==========================================
+        // 4. GAME LOOP
+        // ==========================================
+        let playerPos = vec3.fromValues(4.5, 0, 4.5);
+        let playerAngle = 0;
+        let camPos = vec3.fromValues(4.5, 7, 10);
+        const keys = { w: false, a: false, s: false, d: false };
+
+        window.addEventListener("keydown", e => {
+            const map = { 'KeyW': 'w', 'ArrowUp': 'w', 'KeyS': 's', 'ArrowDown': 's', 'KeyA': 'a', 'ArrowLeft': 'a', 'KeyD': 'd', 'ArrowRight': 'd' };
+            if (map[e.code]) { keys[map[e.code]] = true; uiKeys[map[e.code]].classList.add("active"); }
+        });
+        window.addEventListener("keyup", e => {
+            const map = { 'KeyW': 'w', 'ArrowUp': 'w', 'KeyS': 's', 'ArrowDown': 's', 'KeyA': 'a', 'ArrowLeft': 'a', 'KeyD': 'd', 'ArrowRight': 'd' };
+            if (map[e.code]) { keys[map[e.code]] = false; uiKeys[map[e.code]].classList.remove("active"); }
+        });
+
+        function updateAndRender(time) {
+            time *= 0.001;
+
+            // Physics
+            const moveSpeed = 0.12, rotSpeed = 0.04;
+            if (keys.a) playerAngle += rotSpeed;
+            if (keys.d) playerAngle -= rotSpeed;
+
+            const sinA = Math.sin(playerAngle), cosA = Math.cos(playerAngle);
+            let dx = 0, dz = 0;
+            if (keys.w) { dx -= sinA * moveSpeed; dz -= cosA * moveSpeed; }
+            if (keys.s) { dx += sinA * moveSpeed; dz += cosA * moveSpeed; }
+
+            if (dx !== 0 || dz !== 0) {
+                let nextX = playerPos[0] + dx, nextZ = playerPos[2] + dz;
+                const check = (x, z) => {
+                    let gx = Math.round(x / GRID_SCALE);
+                    let gz = Math.round(z / GRID_SCALE);
+                    if (isWall(gx, gz)) {
+                        let wx = gx * GRID_SCALE, wz = gz * GRID_SCALE;
+                        let wSizeX = 0.5, wSizeZ = 0.5;
+                        const xEven = (gx % 2 === 0), zEven = (gz % 2 === 0);
+                        if (!xEven && zEven) wSizeX = 1.0;
+                        if (xEven && !zEven) wSizeZ = 1.0;
+                        if (Math.abs(x - wx) < (wSizeX + 0.3) && Math.abs(z - wz) < (wSizeZ + 0.3)) return true;
+                    }
+                    return false;
+                };
+                if (!check(nextX, playerPos[2])) playerPos[0] = nextX;
+                if (!check(playerPos[0], nextZ)) playerPos[2] = nextZ;
+            }
+            uiPos.innerText = `${playerPos[0].toFixed(1)}, ${playerPos[2].toFixed(1)}`;
+
+            // Camera
+            const targetX = playerPos[0] + (sinA * 8.0);
+            const targetZ = playerPos[2] + (cosA * 8.0);
+            camPos[0] += (targetX - camPos[0]) * 0.05;
+            camPos[1] += (8.0 - camPos[1]) * 0.05;
+            camPos[2] += (targetZ - camPos[2]) * 0.05;
+
+            // Render
+            // Set dark blue clear color to detect context loss vs shader failure
+            gl.clearColor(0.01, 0.0, 0.03, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+            gl.useProgram(program);
+
+            const view = mat4.create();
+            const lookTarget = vec3.fromValues(playerPos[0] - (sinA * 5.0), 0.0, playerPos[2] - (cosA * 5.0));
+            mat4.lookAt(view, camPos, lookTarget, [0, 1, 0]);
+
+            const projection = mat4.create();
+            mat4.perspective(projection, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
+
+            // Set Global Uniforms
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uView"), false, view);
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uProjection"), false, projection);
+            gl.uniform3fv(gl.getUniformLocation(program, "uPlayerPos"), playerPos);
+            gl.uniform3f(gl.getUniformLocation(program, "uLightDir"), 0.5, 0.8, 0.3);
+            gl.uniform1f(gl.getUniformLocation(program, "uTime"), time);
+
+            // IMPORTANT: Initialize Scale to 1,1,1 so Floor doesn't disappear if default is 0,0,0
+            gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 1.0);
+
+            // 1. FLOOR
+            const modelFloor = mat4.create();
+            mat4.translate(modelFloor, modelFloor, [playerPos[0], -0.5, playerPos[2]]);
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uModel"), false, modelFloor);
+            gl.uniform1i(gl.getUniformLocation(program, "uIsGrid"), true);
+            gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), false);
+            gl.bindVertexArray(floorVAO);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // 2. WALLS
+            gl.uniform1i(gl.getUniformLocation(program, "uIsGrid"), false);
+            gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), true);
+            gl.uniform4f(gl.getUniformLocation(program, "uColor"), 0.15, 0.2, 0.35, 1.0);
+
+            const visibleRadius = 18;
+            const px = Math.round(playerPos[0] / GRID_SCALE);
+            const pz = Math.round(playerPos[2] / GRID_SCALE);
+
+            const pillars = [], hWalls = [], vWalls = [];
+            for (let x = px - visibleRadius; x <= px + visibleRadius; x++) {
+                for (let z = pz - visibleRadius; z <= pz + visibleRadius; z++) {
+                    if (isWall(x, z)) {
+                        const xEven = (x % 2 === 0), zEven = (z % 2 === 0);
+                        const wx = x * GRID_SCALE, wz = z * GRID_SCALE;
+                        if (xEven && zEven) pillars.push(wx, 0.5, wz);
+                        else if (!xEven && zEven) hWalls.push(wx, 0.5, wz);
+                        else if (xEven && !zEven) vWalls.push(wx, 0.5, wz);
+                    }
+                }
+            }
+
+            gl.bindVertexArray(cubeVAO);
+            if (pillars.length) {
+                gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 1.0);
+                gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pillars), gl.DYNAMIC_DRAW);
+                gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, pillars.length / 3);
+            }
+            if (hWalls.length) {
+                gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 2.0, 1.0, 1.0);
+                gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(hWalls), gl.DYNAMIC_DRAW);
+                gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, hWalls.length / 3);
+            }
+            if (vWalls.length) {
+                gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 2.0);
+                gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vWalls), gl.DYNAMIC_DRAW);
+                gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, vWalls.length / 3);
+            }
+
+            // 3. PLAYER
+            gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), false);
+            gl.uniform3f(gl.getUniformLocation(program, "uInstanceScale"), 1.0, 1.0, 1.0);
+            const modelPlayer = mat4.create();
+            mat4.translate(modelPlayer, modelPlayer, playerPos);
+            mat4.rotateY(modelPlayer, modelPlayer, playerAngle);
+            mat4.scale(modelPlayer, modelPlayer, [0.4, 0.3, 0.6]);
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uModel"), false, modelPlayer);
+            gl.uniform4f(gl.getUniformLocation(program, "uColor"), 0.0, 1.0, 1.0, 1.0);
+            gl.bindVertexArray(cubeVAO);
+            gl.drawArrays(gl.TRIANGLES, 0, 36);
+
+            requestAnimationFrame(updateAndRender);
+        }
+
+        const checkSpawn = (x, z) => {
+            let gx = Math.round(x / GRID_SCALE);
+            let gz = Math.round(z / GRID_SCALE);
+            return isWall(gx, gz);
+        };
+        while (checkSpawn(playerPos[0], playerPos[2])) {
+            playerPos[0] += GRID_SCALE;
+        }
+
+        requestAnimationFrame(updateAndRender);
+    </script>
+</body>
+
+</html>

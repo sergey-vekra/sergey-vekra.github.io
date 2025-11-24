@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>3D Infinite Maze - Tank Controls</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #111;
+            font-family: monospace;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00ffcc;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            pointer-events: none;
+            border: 1px solid #00ffcc;
+            line-height: 1.5em;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/3.4.2/gl-matrix-min.js"></script>
+</head>
+
+<body>
+    <div id="ui">
+        <b>Navigator</b><br>
+        Pos: <span id="pos">0, 0</span><br>
+        <hr>
+        <b>W</b> : Move Forward<br>
+        <b>S</b> : Move Backward<br>
+        <b>A</b> : Turn Left<br>
+        <b>D</b> : Turn Right
+    </div>
+    <canvas id="glCanvas"></canvas>
+
+    <script>
+        // ==========================================
+        // 0. SETUP & MATH
+        // ==========================================
+        if (typeof glMatrix === 'undefined') throw new Error("gl-matrix not loaded");
+        const { mat4, vec3 } = glMatrix;
+
+        const canvas = document.getElementById("glCanvas");
+        const gl = canvas.getContext("webgl2");
+        const uiPos = document.getElementById("pos");
+
+        if (!gl) alert("WebGL2 not supported");
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        window.addEventListener("resize", resize);
+        resize();
+
+        // ==========================================
+        // 1. MAZE LOGIC (Binary Tree)
+        // ==========================================
+        const BLOCK_SIZE = 1.0;
+
+        function hash(x, y) {
+            let n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+            return n - Math.floor(n);
+        }
+
+        function isWall(gx, gy) {
+            const xEven = (gx % 2 === 0);
+            const yEven = (gy % 2 === 0);
+
+            // 1. Intersection -> Wall
+            if (xEven && yEven) return true;
+            // 2. Room -> Empty
+            if (!xEven && !yEven) return false;
+            // 3. Horizontal Wall (Even Y)
+            if (!xEven && yEven) return (hash(gx, gy + 1) >= 0.5);
+            // 4. Vertical Wall (Even X)
+            if (xEven && !yEven) return (hash(gx + 1, gy) < 0.5);
+
+            return false;
+        }
+
+        // ==========================================
+        // 2. SHADERS
+        // ==========================================
+        const vsSource = `#version 300 es
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec3 aInstancePos; 
+
+uniform mat4 uModel; 
+uniform mat4 uView;
+uniform mat4 uProjection;
+uniform bool uIsInstanced; 
+
+out vec3 vNormal;
+
+void main() {
+    vec3 worldPos;
+    if (uIsInstanced) {
+        worldPos = aPos + aInstancePos;
+    } else {
+        worldPos = vec3(uModel * vec4(aPos, 1.0));
+    }
+    
+    vNormal = aNormal;
+    gl_Position = uProjection * uView * vec4(worldPos, 1.0);
+}`;
+
+        const fsSource = `#version 300 es
+precision mediump float;
+
+in vec3 vNormal;
+uniform vec4 uColor;
+uniform vec3 uLightDir;
+
+out vec4 FragColor;
+
+void main() {
+    vec3 norm = normalize(vNormal);
+    float diff = max(dot(norm, normalize(uLightDir)), 0.2); 
+    
+    vec3 finalColor = uColor.rgb;
+    
+    // Only shade opaque objects
+    if (uColor.a > 0.8) {
+        finalColor = finalColor * diff;
+    }
+
+    FragColor = vec4(finalColor, uColor.a);
+}`;
+
+        function createProgram(vsSrc, fsSrc) {
+            const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
+            const p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
+            return p;
+        }
+        const program = createProgram(vsSource, fsSource);
+
+        // ==========================================
+        // 3. GEOMETRY BUFFERS
+        // ==========================================
+
+        const cubeVerts = new Float32Array([
+            // Top
+            -0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1, 0,
+            -0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1, 0, -0.5, 0.5, 0.5, 0, 1, 0,
+            // Front
+            -0.5, -0.5, 0.5, 0, 0, 1, 0.5, -0.5, 0.5, 0, 0, 1, 0.5, 0.5, 0.5, 0, 0, 1,
+            -0.5, -0.5, 0.5, 0, 0, 1, 0.5, 0.5, 0.5, 0, 0, 1, -0.5, 0.5, 0.5, 0, 0, 1,
+            // Right
+            0.5, -0.5, 0.5, 1, 0, 0, 0.5, -0.5, -0.5, 1, 0, 0, 0.5, 0.5, -0.5, 1, 0, 0,
+            0.5, -0.5, 0.5, 1, 0, 0, 0.5, 0.5, -0.5, 1, 0, 0, 0.5, 0.5, 0.5, 1, 0, 0,
+            // Back
+            -0.5, -0.5, -0.5, 0, 0, -1, -0.5, 0.5, -0.5, 0, 0, -1, 0.5, 0.5, -0.5, 0, 0, -1,
+            -0.5, -0.5, -0.5, 0, 0, -1, 0.5, 0.5, -0.5, 0, 0, -1, 0.5, -0.5, -0.5, 0, 0, -1,
+            // Left
+            -0.5, -0.5, -0.5, -1, 0, 0, -0.5, -0.5, 0.5, -1, 0, 0, -0.5, 0.5, 0.5, -1, 0, 0,
+            -0.5, -0.5, -0.5, -1, 0, 0, -0.5, 0.5, 0.5, -1, 0, 0, -0.5, 0.5, -0.5, -1, 0, 0,
+        ]);
+        const cubeVAO = gl.createVertexArray();
+        gl.bindVertexArray(cubeVAO);
+        const cubeVBO = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVBO);
+        gl.bufferData(gl.ARRAY_BUFFER, cubeVerts, gl.STATIC_DRAW);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0); gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12); gl.enableVertexAttribArray(1);
+
+        const instanceVBO = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
+        gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 12, 0);
+        gl.enableVertexAttribArray(2);
+        gl.vertexAttribDivisor(2, 1);
+        gl.bindVertexArray(null);
+
+        function createConeData() {
+            let verts = [];
+            verts.push(0, 0, 0, 0, 1, 0);
+            const angleWidth = Math.PI / 3;
+            const segments = 20;
+            const radius = 3.0;
+
+            // Create fan arc
+            for (let i = 0; i <= segments; i++) {
+                let a = -angleWidth / 2 + (angleWidth * i / segments);
+                // Note: -Z is forward in WebGL convention usually
+                let x = Math.sin(a) * radius;
+                let z = -Math.cos(a) * radius;
+                verts.push(x, 0, z, 0, 1, 0);
+            }
+            return new Float32Array(verts);
+        }
+        const coneVerts = createConeData();
+        const coneVAO = gl.createVertexArray();
+        gl.bindVertexArray(coneVAO);
+        const coneVBO = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, coneVBO);
+        gl.bufferData(gl.ARRAY_BUFFER, coneVerts, gl.STATIC_DRAW);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0); gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12); gl.enableVertexAttribArray(1);
+        gl.bindVertexArray(null);
+
+        // ==========================================
+        // 4. GAME STATE
+        // ==========================================
+        let playerPos = vec3.fromValues(1.5, 0, 1.5);
+        let playerAngle = 0;
+        const keys = {};
+
+        window.addEventListener("keydown", e => keys[e.code] = true);
+        window.addEventListener("keyup", e => keys[e.code] = false);
+
+        // ==========================================
+        // 5. LOOP
+        // ==========================================
+
+        function updateAndRender() {
+            // --- 1. Physics ---
+            const moveSpeed = 0.05;
+            const rotSpeed = 0.04;
+
+            // TURN CONTROLS (A / D)
+            if (keys["KeyA"]) playerAngle += rotSpeed; // CCW
+            if (keys["KeyD"]) playerAngle -= rotSpeed; // CW
+
+            // CALCULATE DIRECTION VECTOR
+            // Angle 0 points to -Z. 
+            // sin(0) = 0, cos(0) = 1.
+            // Forward Vector = ( -sin(a), -cos(a) )
+
+            const sinA = Math.sin(playerAngle);
+            const cosA = Math.cos(playerAngle);
+
+            let dx = 0;
+            let dz = 0;
+
+            // MOVE CONTROLS (W / S)
+            if (keys["KeyW"]) {
+                dx -= sinA * moveSpeed;
+                dz -= cosA * moveSpeed;
+            }
+            if (keys["KeyS"]) {
+                dx += sinA * moveSpeed;
+                dz += cosA * moveSpeed;
+            }
+
+            // Apply Move with Collision
+            if (dx !== 0 || dz !== 0) {
+                let nextX = playerPos[0] + dx;
+                let nextZ = playerPos[2] + dz;
+                const radius = 0.3;
+
+                const check = (x, z) => isWall(Math.floor(x), Math.floor(z));
+
+                // Axis independent sliding
+                if (!check(nextX + radius, playerPos[2]) && !check(nextX - radius, playerPos[2])) {
+                    playerPos[0] = nextX;
+                }
+                if (!check(playerPos[0], nextZ + radius) && !check(playerPos[0], nextZ - radius)) {
+                    playerPos[2] = nextZ;
+                }
+            }
+
+            uiPos.innerText = `${Math.floor(playerPos[0])}, ${Math.floor(playerPos[2])}`;
+
+            // --- 2. Render Setup ---
+            gl.clearColor(0.1, 0.1, 0.1, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+            gl.useProgram(program);
+
+            // CAMERA
+            const view = mat4.create();
+            const projection = mat4.create();
+
+            // Top-Down Fixed Camera (North Up)
+            // Eye position tracks player X/Z but stays high up Y
+            mat4.lookAt(view,
+                [playerPos[0], 15, playerPos[2] + 0.1], // Eye
+                [playerPos[0], 0, playerPos[2]],        // Target
+                [0, 1, 0]                               // Up Vector
+            );
+            mat4.perspective(projection, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
+
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uView"), false, view);
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uProjection"), false, projection);
+            gl.uniform3f(gl.getUniformLocation(program, "uLightDir"), 0.5, 1.0, 0.3);
+
+            // --- 3. Draw Maze ---
+            const visibleRadius = 24;
+            const px = Math.floor(playerPos[0]);
+            const pz = Math.floor(playerPos[2]);
+            const instances = [];
+
+            for (let x = px - visibleRadius; x <= px + visibleRadius; x++) {
+                for (let z = pz - visibleRadius; z <= pz + visibleRadius; z++) {
+                    if (isWall(x, z)) {
+                        instances.push(x + 0.5, 0.5, z + 0.5);
+                    }
+                }
+            }
+
+            if (instances.length > 0) {
+                gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), true);
+                gl.uniform4f(gl.getUniformLocation(program, "uColor"), 0.4, 0.4, 0.45, 1.0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, instanceVBO);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(instances), gl.DYNAMIC_DRAW);
+
+                gl.bindVertexArray(cubeVAO);
+                gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, instances.length / 3);
+            }
+
+            // --- 4. Draw Player (Dot) ---
+            gl.uniform1i(gl.getUniformLocation(program, "uIsInstanced"), false);
+
+            const modelPlayer = mat4.create();
+            mat4.translate(modelPlayer, modelPlayer, playerPos);
+            const pulse = 1.0 + Math.sin(Date.now() / 200) * 0.2;
+            mat4.scale(modelPlayer, modelPlayer, [0.4 * pulse, 0.4 * pulse, 0.4 * pulse]);
+
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uModel"), false, modelPlayer);
+            gl.uniform4f(gl.getUniformLocation(program, "uColor"), 0.0, 1.0, 0.8, 1.0);
+
+            gl.bindVertexArray(cubeVAO);
+            gl.drawArrays(gl.TRIANGLES, 0, 36);
+
+            // --- 5. Draw View Cone ---
+            gl.depthMask(false);
+
+            const modelCone = mat4.create();
+            mat4.translate(modelCone, modelCone, [playerPos[0], 0.05, playerPos[2]]);
+            mat4.rotateY(modelCone, modelCone, playerAngle);
+
+            gl.uniformMatrix4fv(gl.getUniformLocation(program, "uModel"), false, modelCone);
+            gl.uniform4f(gl.getUniformLocation(program, "uColor"), 0.0, 1.0, 0.8, 0.3);
+
+            gl.bindVertexArray(coneVAO);
+            gl.drawArrays(gl.TRIANGLE_FAN, 0, 22);
+
+            gl.depthMask(true);
+
+            requestAnimationFrame(updateAndRender);
+        }
+
+        // Initial Spawn check
+        if (isWall(Math.floor(playerPos[0]), Math.floor(playerPos[2]))) {
+            playerPos[0] += 1.0;
+        }
+
+        requestAnimationFrame(updateAndRender);
+
+    </script>
+</body>
+
+</html>
