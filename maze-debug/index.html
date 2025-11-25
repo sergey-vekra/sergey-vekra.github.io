@@ -3,15 +3,12 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>3D Neon Maze - Final</title>
+    <title>WebGL2 Rotating Cube</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background: #020005;
-            /* Deep Cyberpunk Background */
-            font-family: monospace;
-            user-select: none;
+            background: #333;
         }
 
         canvas {
@@ -19,347 +16,256 @@
             width: 100vw;
             height: 100vh;
         }
-
-        #ui {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: #00ffcc;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 15px;
-            pointer-events: none;
-            border-left: 4px solid #d400ff;
-            line-height: 1.5em;
-            box-shadow: 0 0 15px rgba(212, 0, 255, 0.3);
-            border-radius: 0 10px 10px 0;
-            backdrop-filter: blur(4px);
-        }
-
-        .key-indicator {
-            display: inline-block;
-            width: 20px;
-            text-align: center;
-            background: #222;
-            color: #555;
-            border-radius: 4px;
-            margin: 0 2px;
-            font-weight: bold;
-        }
-
-        .active {
-            background: #00ffcc;
-            color: #000;
-            box-shadow: 0 0 8px #00ffcc;
-        }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/3.4.2/gl-matrix-min.js"></script>
 </head>
 
 <body>
-    <div id="ui">
-        <b>// MAZE-DEBUG v0.3 //</b><br>
-        COORD: <span id="pos">0, 0</span><br>
-        <div style="margin-top: 10px;">
-            THRUST:
-            <span id="k-w" class="key-indicator">W</span>
-            <span id="k-a" class="key-indicator">A</span>
-            <span id="k-s" class="key-indicator">S</span>
-            <span id="k-d" class="key-indicator">D</span>
-        </div>
-        <pre id="log" style="margin-top:10px; max-height:40vh; overflow:auto; font-size:10px;"></pre>
-    </div>
-    <canvas id="glCanvas"></canvas>
+    <canvas id="glcanvas"></canvas>
+
+    <!-- VERTEX SHADER (GLSL 3.00 ES) -->
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        #version 300 es
+        
+        // Input attributes
+        in vec4 a_position;
+        in vec4 a_color;
+
+        // Uniform transformation matrix
+        uniform mat4 u_matrix;
+
+        // Output to fragment shader
+        out vec4 v_color;
+
+        void main() {
+            // Multiply the position by the matrix.
+            gl_Position = u_matrix * a_position;
+            
+            // Pass the color to the fragment shader.
+            v_color = a_color;
+        }
+    </script>
+
+    <!-- FRAGMENT SHADER (GLSL 3.00 ES) -->
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        #version 300 es
+        
+        precision mediump float;
+
+        // Input from vertex shader
+        in vec4 v_color;
+
+        // Output color
+        out vec4 outColor;
+
+        void main() {
+            outColor = v_color;
+        }
+    </script>
 
     <script>
-        if (typeof glMatrix === "undefined") throw new Error("gl-matrix not loaded");
-        const { mat4, vec3 } = glMatrix;
-        const canvas = document.getElementById("glCanvas");
-        const gl = canvas.getContext("webgl2");
-        const uiPos = document.getElementById("pos");
-        const uiKeys = {
-            w: document.getElementById("k-w"),
-            a: document.getElementById("k-a"),
-            s: document.getElementById("k-s"),
-            d: document.getElementById("k-d")
-        };
+        "use strict";
 
-        if (!gl) alert("WebGL2 not supported");
+        function main() {
+            // 1. Get Context
+            const canvas = document.getElementById("glcanvas");
+            const gl = canvas.getContext("webgl2");
+            if (!gl) { return alert("WebGL2 not supported"); }
 
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            gl.viewport(0, 0, canvas.width, canvas.height);
-        }
-        window.addEventListener("resize", resize);
-        window.addEventListener("click", () => window.focus());
-        resize();
+            // 2. Compile Shaders
+            const vsSource = document.getElementById("vertex-shader").text.trim();
+            const fsSource = document.getElementById("fragment-shader").text.trim();
+            const program = createProgram(gl, vsSource, fsSource);
 
-        const GRID_SCALE = 1.5;
+            // 3. Look up locations
+            const positionLoc = gl.getAttribLocation(program, "a_position");
+            const colorLoc = gl.getAttribLocation(program, "a_color");
+            const matrixLoc = gl.getUniformLocation(program, "u_matrix");
 
-        function hash(x, y) {
-            let n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
-            return n - Math.floor(n);
-        }
+            // 4. Define Geometry (Cube)
+            // 6 faces * 2 triangles * 3 vertices = 36 vertices
+            // X, Y, Z
+            const positions = new Float32Array([
+                // Front face
+                -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5,
+                -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+                // Back face
+                -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5,
+                -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5,
+                // Top face
+                -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+                -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
+                // Bottom face
+                -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5,
+                -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
+                // Right face
+                0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5,
+                0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5,
+                // Left face
+                -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5,
+                -0.5, -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5,
+            ]);
 
-        function isWall(gx, gy) {
-            const cx = (gx % 2 + 2) % 2;
-            const cy = (gy % 2 + 2) % 2;
-            const xEven = cx === 0;
-            const yEven = cy === 0;
-            if (xEven && yEven) return true;
-            if (!xEven && !yEven) return false;
-            if (!xEven && yEven) return hash(gx, gy + 1) >= 0.5;
-            if (xEven && !yEven) return hash(gx + 1, gy) < 0.5;
-            return false;
-        }
+            // R, G, B for each vertex
+            const colors = new Float32Array([
+                // Front - Red
+                1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0,
+                // Back - Green
+                0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
+                // Top - Blue
+                0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+                // Bottom - Yellow
+                1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0,
+                // Right - Cyan
+                0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1,
+                // Left - Magenta
+                1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1,
+            ]);
 
-        const vsSource = `#version 300 es
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec3 aNormal;
-uniform mat4 uModel;
-uniform mat4 uView;
-uniform mat4 uProjection;
-out vec3 vNormal;
-void main() {
-    vNormal = aNormal;
-    gl_Position = uProjection * uView * uModel * vec4(aPos, 1.0);
-}`;
+            // 5. Setup Vertex Array Object (VAO)
+            const vao = gl.createVertexArray();
+            gl.bindVertexArray(vao);
 
-        const fsSource = `#version 300 es
-precision mediump float;
-in vec3 vNormal;
-uniform vec4 uColor;
-out vec4 FragColor;
-void main() {
-    FragColor = uColor;
-}`;
+            // Buffer Positions
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(positionLoc);
+            gl.vertexAttribPointer(positionLoc, 3, gl.FLOAT, false, 0, 0);
 
-        function createProgram(vsSrc, fsSrc) {
-            const vs = gl.createShader(gl.VERTEX_SHADER);
-            gl.shaderSource(vs, vsSrc);
-            gl.compileShader(vs);
+            // Buffer Colors
+            const colorBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(colorLoc);
+            gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
 
-            const fs = gl.createShader(gl.FRAGMENT_SHADER);
-            gl.shaderSource(fs, fsSrc);
-            gl.compileShader(fs);
-
-            const p = gl.createProgram();
-            gl.attachShader(p, vs);
-            gl.attachShader(p, fs);
-            gl.linkProgram(p);
-
-            return p;
-        }
-
-        const program = createProgram(vsSource, fsSource);
-        gl.useProgram(program);
-
-        const uModelLoc = gl.getUniformLocation(program, "uModel");
-        const uViewLoc = gl.getUniformLocation(program, "uView");
-        const uProjLoc = gl.getUniformLocation(program, "uProjection");
-        const uColorLoc = gl.getUniformLocation(program, "uColor");
-
-        const cubeVerts = new Float32Array([
-            -0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1, 0, -0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1, 0, -0.5, 0.5, 0.5, 0, 1, 0,
-            -0.5, -0.5, 0.5, 0, 0, 1, 0.5, -0.5, 0.5, 0, 0, 1, 0.5, 0.5, 0.5, 0, 0, 1, -0.5, -0.5, 0.5, 0, 0, 1, 0.5, 0.5, 0.5, 0, 0, 1, -0.5, 0.5, 0.5, 0, 0, 1,
-            0.5, -0.5, 0.5, 1, 0, 0, 0.5, -0.5, -0.5, 1, 0, 0, 0.5, 0.5, -0.5, 1, 0, 0, 0.5, -0.5, 0.5, 1, 0, 0, 0.5, 0.5, -0.5, 1, 0, 0, 0.5, 0.5, 0.5, 1, 0, 0,
-            -0.5, -0.5, -0.5, 0, 0, -1, -0.5, 0.5, -0.5, 0, 0, -1, 0.5, 0.5, -0.5, 0, 0, -1, -0.5, -0.5, -0.5, 0, 0, -1, 0.5, 0.5, -0.5, 0, 0, -1, 0.5, -0.5, -0.5, 0, 0, -1,
-            -0.5, -0.5, -0.5, -1, 0, 0, -0.5, -0.5, 0.5, -1, 0, 0, -0.5, 0.5, 0.5, -1, 0, 0, -0.5, -0.5, -0.5, -1, 0, 0, -0.5, 0.5, 0.5, -1, 0, 0, -0.5, 0.5, -0.5, -1, 0, 0
-        ]);
-        const cubeVAO = gl.createVertexArray();
-        gl.bindVertexArray(cubeVAO);
-        const cubeVBO = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVBO);
-        gl.bufferData(gl.ARRAY_BUFFER, cubeVerts, gl.STATIC_DRAW);
-        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
-        gl.enableVertexAttribArray(0);
-        gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
-        gl.enableVertexAttribArray(1);
-
-        const floorVerts = new Float32Array([
-            -100, 0, -100, 0, 1, 0, 100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0,
-            -100, 0, -100, 0, 1, 0, 100, 0, 100, 0, 1, 0, -100, 0, 100, 0, 1, 0
-        ]);
-        const floorVAO = gl.createVertexArray();
-        gl.bindVertexArray(floorVAO);
-        const floorVBO = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, floorVBO);
-        gl.bufferData(gl.ARRAY_BUFFER, floorVerts, gl.STATIC_DRAW);
-        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
-        gl.enableVertexAttribArray(0);
-        gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
-        gl.enableVertexAttribArray(1);
-
-        let playerPos = vec3.fromValues(4.5, 0, 4.5);
-        let playerAngle = 0;
-        let camPos = vec3.fromValues(4.5, 7, 10);
-        const keys = { w: false, a: false, s: false, d: false };
-
-        window.addEventListener("keydown", e => {
-            const map = {
-                KeyW: "w",
-                ArrowUp: "w",
-                KeyS: "s",
-                ArrowDown: "s",
-                KeyA: "a",
-                ArrowLeft: "a",
-                KeyD: "d",
-                ArrowRight: "d"
-            };
-            if (map[e.code]) {
-                keys[map[e.code]] = true;
-                uiKeys[map[e.code]].classList.add("active");
-            }
-        });
-        window.addEventListener("keyup", e => {
-            const map = {
-                KeyW: "w",
-                ArrowUp: "w",
-                KeyS: "s",
-                ArrowDown: "s",
-                KeyA: "a",
-                ArrowLeft: "a",
-                KeyD: "d",
-                ArrowRight: "d"
-            };
-            if (map[e.code]) {
-                keys[map[e.code]] = false;
-                uiKeys[map[e.code]].classList.remove("active");
-            }
-        });
-
-        function drawCube(x, y, z, sx, sy, sz, r, g, b, a) {
-            const model = mat4.create();
-            mat4.translate(model, model, [x, y, z]);
-            mat4.scale(model, model, [sx, sy, sz]);
-            gl.uniformMatrix4fv(uModelLoc, false, model);
-            gl.uniform4f(uColorLoc, r, g, b, a);
-            gl.bindVertexArray(cubeVAO);
-            gl.drawArrays(gl.TRIANGLES, 0, 36);
-        }
-
-        function drawFloor() {
-            const modelFloor = mat4.create();
-            mat4.translate(modelFloor, modelFloor, [playerPos[0], -0.6, playerPos[2]]);
-            gl.uniformMatrix4fv(uModelLoc, false, modelFloor);
-            gl.uniform4f(uColorLoc, 0.01, 0.0, 0.02, 1.0);
-            gl.bindVertexArray(floorVAO);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-        }
-
-        function updateAndRender(time) {
-            time *= 0.001;
-
-            const moveSpeed = 0.12;
-            const rotSpeed = 0.04;
-            if (keys.a) playerAngle += rotSpeed;
-            if (keys.d) playerAngle -= rotSpeed;
-
-            const sinA = Math.sin(playerAngle);
-            const cosA = Math.cos(playerAngle);
-            let dx = 0, dz = 0;
-            if (keys.w) {
-                dx -= sinA * moveSpeed;
-                dz -= cosA * moveSpeed;
-            }
-            if (keys.s) {
-                dx += sinA * moveSpeed;
-                dz += cosA * moveSpeed;
-            }
-
-            if (dx !== 0 || dz !== 0) {
-                let nextX = playerPos[0] + dx;
-                let nextZ = playerPos[2] + dz;
-                const check = (x, z) => {
-                    let gx = Math.round(x / GRID_SCALE);
-                    let gz = Math.round(z / GRID_SCALE);
-                    if (isWall(gx, gz)) {
-                        let wx = gx * GRID_SCALE;
-                        let wz = gz * GRID_SCALE;
-                        let wSizeX = 0.5;
-                        let wSizeZ = 0.5;
-                        const xEven = gx % 2 === 0;
-                        const zEven = gz % 2 === 0;
-                        if (!xEven && zEven) wSizeX = 1.0;
-                        if (xEven && !zEven) wSizeZ = 1.0;
-                        if (Math.abs(x - wx) < wSizeX + 0.3 && Math.abs(z - wz) < wSizeZ + 0.3) return true;
-                    }
-                    return false;
-                };
-                if (!check(nextX, playerPos[2])) playerPos[0] = nextX;
-                if (!check(playerPos[0], nextZ)) playerPos[2] = nextZ;
-            }
-
-            uiPos.innerText = `${playerPos[0].toFixed(1)}, ${playerPos[2].toFixed(1)}`;
-
-            const targetX = playerPos[0] + sinA * 8.0;
-            const targetZ = playerPos[2] + cosA * 8.0;
-            camPos[0] += (targetX - camPos[0]) * 0.05;
-            camPos[1] += (7.0 - camPos[1]) * 0.05;
-            camPos[2] += (targetZ - camPos[2]) * 0.05;
-
-            gl.clearColor(0.01, 0.0, 0.02, 1.0);
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            // 6. Setup Rendering Settings
             gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.CULL_FACE); // Don't draw back-facing triangles
 
-            gl.useProgram(program);
+            // 7. Animation Loop
+            let then = 0;
+            let rotationX = 0;
+            let rotationY = 0;
 
-            const view = mat4.create();
-            const lookTarget = vec3.fromValues(playerPos[0] - sinA * 5.0, 0.0, playerPos[2] - cosA * 5.0);
-            mat4.lookAt(view, camPos, lookTarget, [0, 1, 0]);
-            const projection = mat4.create();
-            mat4.perspective(projection, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
+            function render(now) {
+                now *= 0.001; // Convert to seconds
+                const deltaTime = now - then;
+                then = now;
 
-            gl.uniformMatrix4fv(uViewLoc, false, view);
-            gl.uniformMatrix4fv(uProjLoc, false, projection);
-
-            drawFloor();
-
-            gl.bindVertexArray(cubeVAO);
-            const visibleRadius = 22;
-            const px = Math.round(playerPos[0] / GRID_SCALE);
-            const pz = Math.round(playerPos[2] / GRID_SCALE);
-
-            for (let x = px - visibleRadius; x <= px + visibleRadius; x++) {
-                for (let z = pz - visibleRadius; z <= pz + visibleRadius; z++) {
-                    if (isWall(x, z)) {
-                        const xEven = x % 2 === 0;
-                        const zEven = z % 2 === 0;
-                        const wx = x * GRID_SCALE;
-                        const wz = z * GRID_SCALE;
-                        if (xEven && zEven) {
-                            drawCube(wx, 0.5, wz, 1.0, 1.0, 1.0, 0.2, 0.25, 0.4, 1.0);
-                        } else if (!xEven && zEven) {
-                            drawCube(wx, 0.5, wz, 2.0, 1.0, 1.0, 0.2, 0.25, 0.4, 1.0);
-                        } else if (xEven && !zEven) {
-                            drawCube(wx, 0.5, wz, 1.0, 1.0, 2.0, 0.2, 0.25, 0.4, 1.0);
-                        }
-                    }
+                // Resize canvas to fit screen
+                if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
+                    canvas.width = canvas.clientWidth;
+                    canvas.height = canvas.clientHeight;
+                    gl.viewport(0, 0, canvas.width, canvas.height);
                 }
+
+                // Clear screen
+                gl.clearColor(0.2, 0.2, 0.2, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                gl.useProgram(program);
+                gl.bindVertexArray(vao);
+
+                // Update Rotation
+                rotationX += deltaTime;
+                rotationY += deltaTime * 0.7;
+
+                // Compute Matrix
+                const aspect = canvas.clientWidth / canvas.clientHeight;
+                const projectionMatrix = m4.perspective(Math.PI / 4, aspect, 0.1, 100);
+
+                // Move camera back (Translate Z) -> Rotate X -> Rotate Y
+                let matrix = m4.translate(projectionMatrix, 0, 0, -3);
+                matrix = m4.xRotate(matrix, rotationX);
+                matrix = m4.yRotate(matrix, rotationY);
+
+                // Set Uniform
+                gl.uniformMatrix4fv(matrixLoc, false, matrix);
+
+                // Draw
+                gl.drawArrays(gl.TRIANGLES, 0, 36);
+
+                requestAnimationFrame(render);
             }
-
-            const modelPlayer = mat4.create();
-            mat4.translate(modelPlayer, modelPlayer, playerPos);
-            mat4.rotateY(modelPlayer, modelPlayer, playerAngle);
-            mat4.scale(modelPlayer, modelPlayer, [0.4, 0.3, 0.6]);
-            gl.uniformMatrix4fv(uModelLoc, false, modelPlayer);
-            gl.uniform4f(uColorLoc, 0.0, 1.0, 1.0, 1.0);
-            gl.bindVertexArray(cubeVAO);
-            gl.drawArrays(gl.TRIANGLES, 0, 36);
-
-            requestAnimationFrame(updateAndRender);
+            requestAnimationFrame(render);
         }
 
-        const checkSpawn = (x, z) => {
-            let gx = Math.round(x / GRID_SCALE);
-            let gz = Math.round(z / GRID_SCALE);
-            return isWall(gx, gz);
+        // --- Helper: Shader Compilation ---
+        function createProgram(gl, vsSource, fsSource) {
+            const vs = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+            const program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error(gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+            return program;
+        }
+
+        function compileShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        // --- Helper: Minimal Matrix Math (Column Major) ---
+        const m4 = {
+            perspective: function (fieldOfViewInRadians, aspect, near, far) {
+                const f = Math.tan(Math.PI * 0.5 - 0.5 * fieldOfViewInRadians);
+                const rangeInv = 1.0 / (near - far);
+                return [
+                    f / aspect, 0, 0, 0,
+                    0, f, 0, 0,
+                    0, 0, (near + far) * rangeInv, -1,
+                    0, 0, near * far * rangeInv * 2, 0
+                ];
+            },
+            translate: function (m, tx, ty, tz) {
+                return [
+                    m[0], m[1], m[2], m[3],
+                    m[4], m[5], m[6], m[7],
+                    m[8], m[9], m[10], m[11],
+                    m[0] * tx + m[4] * ty + m[8] * tz + m[12],
+                    m[1] * tx + m[5] * ty + m[9] * tz + m[13],
+                    m[2] * tx + m[6] * ty + m[10] * tz + m[14],
+                    m[3] * tx + m[7] * ty + m[11] * tz + m[15],
+                ];
+            },
+            xRotate: function (m, angleInRadians) {
+                const c = Math.cos(angleInRadians);
+                const s = Math.sin(angleInRadians);
+                return [
+                    m[0], m[1], m[2], m[3],
+                    m[4] * c + m[8] * s, m[5] * c + m[9] * s, m[6] * c + m[10] * s, m[7] * c + m[11] * s,
+                    m[4] * -s + m[8] * c, m[5] * -s + m[9] * c, m[6] * -s + m[10] * c, m[7] * -s + m[11] * c,
+                    m[12], m[13], m[14], m[15],
+                ];
+            },
+            yRotate: function (m, angleInRadians) {
+                const c = Math.cos(angleInRadians);
+                const s = Math.sin(angleInRadians);
+                return [
+                    m[0] * c + m[8] * -s, m[1] * c + m[9] * -s, m[2] * c + m[10] * -s, m[3] * c + m[11] * -s,
+                    m[4], m[5], m[6], m[7],
+                    m[0] * s + m[8] * c, m[1] * s + m[9] * c, m[2] * s + m[10] * c, m[3] * s + m[11] * c,
+                    m[12], m[13], m[14], m[15],
+                ];
+            },
         };
-        while (checkSpawn(playerPos[0], playerPos[2])) {
-            playerPos[0] += GRID_SCALE;
-        }
 
-        requestAnimationFrame(updateAndRender);
+        // Start
+        main();
     </script>
 </body>
 
