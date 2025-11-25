@@ -57,7 +57,7 @@
 
 <body>
     <div id="ui">
-        <b>// MAZE-DEBUG v0.1 //</b><br>
+        <b>// MAZE-DEBUG v0.2 //</b><br>
         COORD: <span id="pos">0, 0</span><br>
         <div style="margin-top: 10px;">
             THRUST:
@@ -66,10 +66,27 @@
             <span id="k-s" class="key-indicator">S</span>
             <span id="k-d" class="key-indicator">D</span>
         </div>
+        <pre id="log" style="margin-top:10px; max-height:40vh; overflow:auto; font-size:10px;"></pre>
     </div>
     <canvas id="glCanvas"></canvas>
 
     <script>
+
+        const uiLog = document.getElementById("log");
+
+        function log() {
+            const msg = Array.from(arguments).join(" ");
+            uiLog.textContent += msg + "\n";
+            uiLog.scrollTop = uiLog.scrollHeight;
+        }
+
+        console.log = function () {
+            log("LOG:", ...arguments);
+        };
+        console.error = function () {
+            log("ERR:", ...arguments);
+        };
+
         // ==========================================
         // 0. SETUP & UTILS
         // ==========================================
