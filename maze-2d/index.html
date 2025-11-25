@@ -4,12 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>2D Infinite Maze (WebGL2)</title>
+    <title>Isometric Infinite Maze (WebGL2)</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background: #000;
+            background: #111;
             touch-action: none;
             font-family: monospace;
         }
@@ -25,11 +25,12 @@
             position: absolute;
             top: 10px;
             left: 10px;
-            color: #0f0;
+            color: #ffcc00;
             background: rgba(0, 0, 0, 0.8);
             padding: 8px;
-            border: 1px solid #0f0;
+            border: 1px solid #ffcc00;
             pointer-events: none;
+            z-index: 10;
         }
 
         /* TOUCH CONTROLS */
@@ -40,16 +41,16 @@
             width: 140px;
             height: 140px;
             display: none;
-            /* Shown via JS on touch devices */
+            z-index: 20;
         }
 
         .btn {
             position: absolute;
             width: 40px;
             height: 40px;
-            border: 2px solid #0f0;
-            background: rgba(0, 255, 0, 0.2);
-            color: #0f0;
+            border: 2px solid #ffcc00;
+            background: rgba(255, 204, 0, 0.2);
+            color: #ffcc00;
             text-align: center;
             line-height: 40px;
             font-weight: bold;
@@ -58,7 +59,7 @@
         }
 
         .btn:active {
-            background: #0f0;
+            background: #ffcc00;
             color: #000;
         }
 
@@ -104,101 +105,171 @@
 
     <!-- SHADERS -->
     <script id="vs" type="x-shader/x-vertex">#version 300 es
-        // 1. Attributes
-        layout(location = 0) in vec2 a_position;    // The square geometry
-        layout(location = 1) in vec2 a_instancePos; // The offset for each wall
+        // Inputs
+        layout(location = 0) in vec3 a_position;    // Cube geometry
+        layout(location = 1) in vec3 a_normal;      // Lighting normals
+        layout(location = 2) in vec2 a_instancePos; // X,Z offset for walls
         
-        // 2. Uniforms
-        uniform mat4 u_projection;
-        uniform vec2 u_viewOffset; // Camera position
-        uniform vec2 u_modelOffset; // Single object offset (for player)
-        uniform float u_rotation;   // Rotation (for player)
-        uniform float u_scale;      // Scale size
-        uniform bool u_isInstanced; // Toggle between Player mode and Wall mode
+        // Uniforms
+        uniform mat4 u_viewProj;    // Combined Ortho + Camera Matrix
+        uniform vec3 u_modelOffset; // Player position (or 0 for walls)
+        uniform float u_rotation;   // Player rotation
+        uniform float u_scale;      // Scale
+        uniform bool u_isInstanced; // Mode switch
+
+        // Output to Fragment Shader
+        out vec3 v_normal;
 
         void main() {
-            vec2 pos = a_position * u_scale;
+            vec3 pos = a_position * u_scale;
 
-            // Apply Rotation
+            // Rotate Player (Y-axis rotation)
             if (u_rotation != 0.0) {
                 float c = cos(u_rotation);
                 float s = sin(u_rotation);
-                pos = vec2(pos.x * c - pos.y * s, pos.x * s + pos.y * c);
+                // Rotate around Y
+                float nx = pos.x * c - pos.z * s;
+                float nz = pos.x * s + pos.z * c;
+                pos.x = nx;
+                pos.z = nz;
             }
 
-            // Apply Translation
-            vec2 worldPos;
+            // Translate
             if (u_isInstanced) {
-                // Wall Mode: Use the instance buffer
-                worldPos = pos + a_instancePos; 
+                // Wall Mode: a_instancePos contains X and Z coordinates
+                // We map them to World X and Z. Y is 0.
+                pos = pos + vec3(a_instancePos.x, 0.0, a_instancePos.y);
             } else {
-                // Player Mode: Use the uniform
-                worldPos = pos + u_modelOffset;
+                // Player Mode
+                pos = pos + u_modelOffset;
             }
 
-            // Apply Camera (View) -> Move world opposite to player
-            vec2 viewPos = worldPos - u_viewOffset;
-
-            gl_Position = u_projection * vec4(viewPos, 0.0, 1.0);
+            v_normal = a_normal; // Pass normal for lighting
+            gl_Position = u_viewProj * vec4(pos, 1.0);
         }
     </script>
 
     <script id="fs" type="x-shader/x-fragment">#version 300 es
         precision mediump float;
+        
+        in vec3 v_normal;
         uniform vec4 u_color;
+        
         out vec4 outColor;
+
         void main() {
-            outColor = u_color;
+            // Simple Directional Lighting
+            // Light coming from top-right-front
+            vec3 lightDir = normalize(vec3(0.5, 1.0, 0.7));
+            
+            // Diffuse calculation
+            // If u_rotation is used, normals should technically be rotated too, 
+            // but for a simple cube player it looks acceptable without it.
+            float diff = max(dot(normalize(v_normal), lightDir), 0.3); // 0.3 is Ambient
+
+            outColor = vec4(u_color.rgb * diff, u_color.a);
         }
     </script>
 
     <script>
         // ==========================================
+        // 0. MATH HELPERS (Minimal Mat4)
+        // ==========================================
+        const Mat4 = {
+            create: () => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
+            ortho: (out, left, right, bottom, top, near, far) => {
+                let lr = 1 / (left - right), bt = 1 / (bottom - top), nf = 1 / (near - far);
+                out[0] = -2 * lr; out[5] = -2 * bt; out[10] = 2 * nf;
+                out[12] = (left + right) * lr; out[13] = (top + bottom) * bt; out[14] = (far + near) * nf;
+                return out;
+            },
+            rotateX: (out, rad) => {
+                let s = Math.sin(rad), c = Math.cos(rad);
+                let a10 = out[4], a11 = out[5], a12 = out[6], a13 = out[7];
+                let a20 = out[8], a21 = out[9], a22 = out[10], a23 = out[11];
+                out[4] = a10 * c + a20 * s; out[5] = a11 * c + a21 * s; out[6] = a12 * c + a22 * s; out[7] = a13 * c + a23 * s;
+                out[8] = a20 * c - a10 * s; out[9] = a21 * c - a11 * s; out[10] = a22 * c - a12 * s; out[11] = a23 * c - a13 * s;
+            },
+            rotateY: (out, rad) => {
+                let s = Math.sin(rad), c = Math.cos(rad);
+                let a00 = out[0], a01 = out[1], a02 = out[2], a03 = out[3];
+                let a20 = out[8], a21 = out[9], a22 = out[10], a23 = out[11];
+                out[0] = a00 * c - a20 * s; out[1] = a01 * c - a21 * s; out[2] = a02 * c - a22 * s; out[3] = a03 * c - a23 * s;
+                out[8] = a00 * s + a20 * c; out[9] = a01 * s + a21 * c; out[10] = a02 * s + a22 * c; out[11] = a03 * s + a23 * c;
+            },
+            translate: (out, x, y, z) => {
+                out[12] += out[0] * x + out[4] * y + out[8] * z;
+                out[13] += out[1] * x + out[5] * y + out[9] * z;
+                out[14] += out[2] * x + out[6] * y + out[10] * z;
+                out[15] += out[3] * x + out[7] * y + out[11] * z;
+            }
+        };
+
+        // ==========================================
         // 1. SETUP
         // ==========================================
         const canvas = document.getElementById("glCanvas");
-        const gl = canvas.getContext("webgl2", { alpha: false });
-        if (!gl) { alert("WebGL2 required"); throw "No WebGL2"; }
+        const gl = canvas.getContext("webgl2", { alpha: false, depth: true, antialias: true });
+        if (!gl) throw "WebGL2 required";
 
-        // Compile Shaders
         function createShader(gl, type, src) {
             const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
             if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
             return s;
         }
-        const vs = createShader(gl, gl.VERTEX_SHADER, document.getElementById("vs").text);
-        const fs = createShader(gl, gl.FRAGMENT_SHADER, document.getElementById("fs").text);
-        const program = gl.createProgram();
-        gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program);
-        gl.useProgram(program);
+        const p = gl.createProgram();
+        gl.attachShader(p, createShader(gl, gl.VERTEX_SHADER, document.getElementById("vs").text));
+        gl.attachShader(p, createShader(gl, gl.FRAGMENT_SHADER, document.getElementById("fs").text));
+        gl.linkProgram(p);
+        gl.useProgram(p);
 
         // ==========================================
-        // 2. GEOMETRY (A Simple Square)
+        // 2. GEOMETRY (Cube)
         // ==========================================
-        // A 1x1 square centered at 0,0
-        const squareVerts = new Float32Array([
-            -0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
-            -0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+        // 36 vertices (6 faces * 2 triangles * 3 verts)
+        // Format: x,y,z, nx,ny,nz (Position, Normal)
+        const cubeData = new Float32Array([
+            // Top (y=0.5)
+            -0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1, 0,
+            -0.5, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1, 0, -0.5, 0.5, 0.5, 0, 1, 0,
+            // Front (z=0.5)
+            -0.5, -0.5, 0.5, 0, 0, 1, 0.5, -0.5, 0.5, 0, 0, 1, 0.5, 0.5, 0.5, 0, 0, 1,
+            -0.5, -0.5, 0.5, 0, 0, 1, 0.5, 0.5, 0.5, 0, 0, 1, -0.5, 0.5, 0.5, 0, 0, 1,
+            // Right (x=0.5)
+            0.5, -0.5, 0.5, 1, 0, 0, 0.5, -0.5, -0.5, 1, 0, 0, 0.5, 0.5, -0.5, 1, 0, 0,
+            0.5, -0.5, 0.5, 1, 0, 0, 0.5, 0.5, -0.5, 1, 0, 0, 0.5, 0.5, 0.5, 1, 0, 0,
+            // Back (z=-0.5)
+            -0.5, -0.5, -0.5, 0, 0, -1, -0.5, 0.5, -0.5, 0, 0, -1, 0.5, 0.5, -0.5, 0, 0, -1,
+            -0.5, -0.5, -0.5, 0, 0, -1, 0.5, 0.5, -0.5, 0, 0, -1, 0.5, -0.5, -0.5, 0, 0, -1,
+            // Left (x=-0.5)
+            -0.5, -0.5, -0.5, -1, 0, 0, -0.5, -0.5, 0.5, -1, 0, 0, -0.5, 0.5, 0.5, -1, 0, 0,
+            -0.5, -0.5, -0.5, -1, 0, 0, -0.5, 0.5, 0.5, -1, 0, 0, -0.5, 0.5, -0.5, -1, 0, 0,
+            // Bottom (y=-0.5)
+            -0.5, -0.5, -0.5, 0, -1, 0, 0.5, -0.5, 0.5, 0, -1, 0, 0.5, -0.5, -0.5, 0, -1, 0,
+            -0.5, -0.5, -0.5, 0, -1, 0, -0.5, -0.5, 0.5, 0, -1, 0, 0.5, -0.5, 0.5, 0, -1, 0
         ]);
 
-        // VAO Setup
         const vao = gl.createVertexArray();
         gl.bindVertexArray(vao);
 
-        // VBO: Geometry
-        const geoBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, geoBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, squareVerts, gl.STATIC_DRAW);
-        gl.enableVertexAttribArray(0);
-        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        const vbo = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, cubeData, gl.STATIC_DRAW);
 
-        // VBO: Instancing (Positions for walls)
-        const instanceBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW); // Will fill later
+        // Attrib 0: Position (3 floats, stride 24, offset 0)
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+        // Attrib 1: Normal (3 floats, stride 24, offset 12)
         gl.enableVertexAttribArray(1);
-        gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
-        gl.vertexAttribDivisor(1, 1); // IMPORTANT: Advance 1 per instance, not per vertex
+        gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+
+        // Instance Buffer (X, Z coords only)
+        const iBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, iBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(2);
+        gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribDivisor(2, 1); // 1 per instance
 
         // ==========================================
         // 3. MAZE & LOGIC
@@ -207,171 +278,127 @@
             let n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
             return n - Math.floor(n);
         }
-
         function isWall(gx, gy) {
-            const xEven = (gx % 2 === 0);
-            const yEven = (gy % 2 === 0);
-            if (xEven && yEven) return true; // Intersection
-            if (!xEven && !yEven) return false; // Room
-            if (!xEven && yEven) return (hash(gx, gy + 1) >= 0.5);
-            if (xEven && !yEven) return (hash(gx + 1, gy) < 0.5);
-            return false;
+            const xEven = (gx % 2 === 0), yEven = (gy % 2 === 0);
+            if (xEven && yEven) return true;
+            if (!xEven && !yEven) return false;
+            return !xEven && yEven ? hash(gx, gy + 1) >= 0.5 : hash(gx + 1, gy) < 0.5;
         }
 
-        // State
-        let playerPos = { x: 1.5, y: 1.5 };
-        let playerAngle = 0; // Radians
+        let playerPos = { x: 1.5, z: 1.5 }; // Note: Using Z now for 3D logic
+        let playerAngle = 0;
 
-        // Find safe spawn
-        while (isWall(Math.floor(playerPos.x), Math.floor(playerPos.y))) {
-            playerPos.x += 1;
-        }
+        while (isWall(Math.floor(playerPos.x), Math.floor(playerPos.z))) playerPos.x += 1;
 
         // ==========================================
         // 4. INPUTS
         // ==========================================
         const keys = {};
         const touch = { up: false, down: false, left: false, right: false };
-
         window.addEventListener("keydown", e => keys[e.code] = true);
         window.addEventListener("keyup", e => keys[e.code] = false);
-
-        function bindTouch(id, k) {
+        const bindT = (id, k) => {
             const el = document.getElementById(id);
-            const set = (e, v) => { e.preventDefault(); touch[k] = v; };
-            el.addEventListener("touchstart", e => set(e, true));
-            el.addEventListener("touchend", e => set(e, false));
-            el.addEventListener("mousedown", e => set(e, true));
-            el.addEventListener("mouseup", e => set(e, false));
-        }
-        bindTouch("btn-up", "up"); bindTouch("btn-down", "down");
-        bindTouch("btn-left", "left"); bindTouch("btn-right", "right");
+            const s = (v) => (e) => { e.preventDefault(); touch[k] = v; };
+            el.addEventListener("touchstart", s(true)); el.addEventListener("touchend", s(false));
+            el.addEventListener("mousedown", s(true)); el.addEventListener("mouseup", s(false));
+        };
+        bindT("btn-up", "up"); bindT("btn-down", "down"); bindT("btn-left", "left"); bindT("btn-right", "right");
 
-        // Handle Resize
-        let projMatrix = new Float32Array(16);
+        // ==========================================
+        // 5. RENDER LOOP
+        // ==========================================
+        let matViewProj = new Float32Array(16);
+
         function resize() {
-            const ratio = window.devicePixelRatio || 1;
-            canvas.width = window.innerWidth * ratio;
-            canvas.height = window.innerHeight * ratio;
+            const r = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * r;
+            canvas.height = window.innerHeight * r;
             gl.viewport(0, 0, canvas.width, canvas.height);
-
-            // Create Orthographic Projection (Center 0,0)
-            // Zoom: Show about 20 units wide
-            const zoom = 20;
-            const aspect = canvas.width / canvas.height;
-
-            // Left, Right, Bottom, Top, Near, Far
-            const w = zoom * aspect / 2;
-            const h = zoom / 2;
-
-            // Standard Ortho Matrix 4x4
-            // 2/(r-l), 0, 0, 0
-            // 0, 2/(t-b), 0, 0
-            // ...
-            projMatrix.fill(0);
-            projMatrix[0] = 1 / w;
-            projMatrix[5] = 1 / h;
-            projMatrix[10] = -1;
-            projMatrix[15] = 1;
         }
         window.addEventListener("resize", resize);
         resize();
 
-        // ==========================================
-        // 5. GAME LOOP
-        // ==========================================
         function updateAndRender() {
-            // --- PHYSICS ---
-            const moveSpeed = 0.08;
-            const rotSpeed = 0.06;
-
+            // --- LOGIC ---
+            const speed = 0.08, rotSpeed = 0.06;
             if (keys["KeyA"] || touch.left) playerAngle += rotSpeed;
             if (keys["KeyD"] || touch.right) playerAngle -= rotSpeed;
 
-            // In 2D: X is right, Y is up. Angle 0 = Right (usually)
-            // Let's align 0 to Up for Tank controls:
-            // Forward vector = (-sin(a), cos(a)) 
-            let dx = 0, dy = 0;
-            const sin = Math.sin(playerAngle);
-            const cos = Math.cos(playerAngle);
+            const sin = Math.sin(playerAngle), cos = Math.cos(playerAngle);
+            let dx = 0, dz = 0;
+            if (keys["KeyW"] || touch.up) { dx -= sin * speed; dz -= cos * speed; }
+            if (keys["KeyS"] || touch.down) { dx += sin * speed; dz += cos * speed; }
 
-            if (keys["KeyW"] || touch.up) { dx -= sin * moveSpeed; dy += cos * moveSpeed; }
-            if (keys["KeyS"] || touch.down) { dx += sin * moveSpeed; dy -= cos * moveSpeed; }
-
-            // Collision
-            if (dx !== 0 || dy !== 0) {
-                const radius = 0.3;
-                const nextX = playerPos.x + dx;
-                const nextY = playerPos.y + dy;
-                const check = (x, y) => isWall(Math.floor(x), Math.floor(y));
-
-                // Slide X
-                if (!check(nextX + radius, playerPos.y) && !check(nextX - radius, playerPos.y)) {
-                    playerPos.x = nextX;
-                }
-                // Slide Y
-                if (!check(playerPos.x, nextY + radius) && !check(playerPos.x, nextY - radius)) {
-                    playerPos.y = nextY;
-                }
+            if (dx !== 0 || dz !== 0) {
+                const check = (x, z) => isWall(Math.floor(x), Math.floor(z));
+                if (!check(playerPos.x + dx + 0.3, playerPos.z) && !check(playerPos.x + dx - 0.3, playerPos.z)) playerPos.x += dx;
+                if (!check(playerPos.x, playerPos.z + dz + 0.3) && !check(playerPos.x, playerPos.z + dz - 0.3)) playerPos.z += dz;
             }
+            document.getElementById("pos").innerText = `${Math.floor(playerPos.x)}, ${Math.floor(playerPos.z)}`;
 
-            // Update UI
-            document.getElementById("pos").innerText =
-                `${Math.floor(playerPos.x)}, ${Math.floor(playerPos.y)}`;
+            // --- MATRIX SETUP (ISOMETRIC) ---
+            // 1. Identity
+            const m = Mat4.create();
+            // 2. Orthographic Projection (Zoom level 14)
+            const aspect = canvas.width / canvas.height;
+            const zoom = 14;
+            Mat4.ortho(m, -zoom * aspect, zoom * aspect, -zoom, zoom, -50, 50);
 
-            // --- RENDER ---
-            gl.clearColor(0.05, 0.05, 0.05, 1);
-            gl.clear(gl.COLOR_BUFFER_BIT);
+            // 3. Camera Rotation (Isometric tilt)
+            Mat4.rotateX(m, Math.PI / 3.5); // Tilt down ~50 degrees
+            Mat4.rotateY(m, Math.PI / 4);   // Rotate 45 degrees
 
-            // Common Uniforms
-            const uLocProj = gl.getUniformLocation(program, "u_projection");
-            const uLocView = gl.getUniformLocation(program, "u_viewOffset");
-            const uLocMod = gl.getUniformLocation(program, "u_modelOffset");
-            const uLocRot = gl.getUniformLocation(program, "u_rotation");
-            const uLocScale = gl.getUniformLocation(program, "u_scale");
-            const uLocInst = gl.getUniformLocation(program, "u_isInstanced");
-            const uLocCol = gl.getUniformLocation(program, "u_color");
+            // 4. Camera Follow (Move world opposite to player)
+            // Note: We move the world -X, -Z. Center logic handles Y.
+            Mat4.translate(m, -playerPos.x, -1.0, -playerPos.z);
 
-            gl.uniformMatrix4fv(uLocProj, false, projMatrix);
-            gl.uniform2f(uLocView, playerPos.x, playerPos.y); // Camera follows player
+            // --- DRAW ---
+            gl.clearColor(0.15, 0.15, 0.15, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.CULL_FACE);
 
-            // 1. DRAW WALLS (Instanced)
-            const range = 14;
+            const uVP = gl.getUniformLocation(p, "u_viewProj");
+            const uMod = gl.getUniformLocation(p, "u_modelOffset");
+            const uRot = gl.getUniformLocation(p, "u_rotation");
+            const uScl = gl.getUniformLocation(p, "u_scale");
+            const uInst = gl.getUniformLocation(p, "u_isInstanced");
+            const uCol = gl.getUniformLocation(p, "u_color");
+
+            gl.uniformMatrix4fv(uVP, false, m);
+
+            // Draw Walls
+            const range = 12;
             const walls = [];
-            const px = Math.floor(playerPos.x);
-            const py = Math.floor(playerPos.y);
-
-            for (let y = py - range; y <= py + range; y++) {
+            const px = Math.floor(playerPos.x), pz = Math.floor(playerPos.z);
+            for (let z = pz - range; z <= pz + range; z++) {
                 for (let x = px - range; x <= px + range; x++) {
-                    if (isWall(x, y)) {
-                        walls.push(x + 0.5, y + 0.5); // Center of tile
-                    }
+                    if (isWall(x, z)) walls.push(x + 0.5, z + 0.5);
                 }
             }
 
-            gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
+            gl.bindBuffer(gl.ARRAY_BUFFER, iBuffer);
             gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(walls), gl.DYNAMIC_DRAW);
 
-            gl.uniform1i(uLocInst, true);
-            gl.uniform1f(uLocScale, 1.0); // Wall size 1x1
-            gl.uniform1f(uLocRot, 0.0);
-            gl.uniform4f(uLocCol, 0.0, 0.8, 0.4, 1.0); // Matrix Green
+            gl.uniform1i(uInst, true);
+            gl.uniform1f(uScl, 1.0);
+            gl.uniform1f(uRot, 0.0);
+            gl.uniform4f(uCol, 0.4, 0.5, 0.6, 1.0); // Slate blue walls
+            gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, walls.length / 2);
 
-            gl.bindVertexArray(vao);
-            gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, walls.length / 2);
-
-            // 2. DRAW PLAYER
-            gl.uniform1i(uLocInst, false);
-            gl.uniform2f(uLocMod, playerPos.x, playerPos.y);
-            gl.uniform1f(uLocScale, 0.6); // Player is smaller
-            gl.uniform1f(uLocRot, playerAngle);
-            gl.uniform4f(uLocCol, 1.0, 0.0, 0.5, 1.0); // Magenta
-
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            // Draw Player
+            gl.uniform1i(uInst, false);
+            gl.uniform3f(uMod, playerPos.x, 0.0, playerPos.z);
+            gl.uniform1f(uScl, 0.6); // Smaller cube
+            // Isometric view makes player rotation hard to see if just a plain cube, 
+            // but the corners will move.
+            gl.uniform1f(uRot, playerAngle);
+            gl.uniform4f(uCol, 1.0, 0.8, 0.2, 1.0); // Orange player
+            gl.drawArrays(gl.TRIANGLES, 0, 36);
 
             requestAnimationFrame(updateAndRender);
         }
-
         requestAnimationFrame(updateAndRender);
     </script>
 </body>
