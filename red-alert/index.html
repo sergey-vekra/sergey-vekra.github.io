@@ -3,23 +3,24 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Red Alert Clone V9 (Bug Fixes)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Red Alert Clone V9 (2-Finger Pan)</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
             background: #000;
             font-family: 'Courier New', Courier, monospace;
+            touch-action: none;
+            /* Critical: Disables browser zoom/scroll */
         }
 
-        /* Flex Container to split Game and Sidebar */
         #game-container {
             display: flex;
             height: 100vh;
             width: 100vw;
         }
 
-        /* Canvas takes remaining width */
         #canvas-container {
             flex: 1;
             position: relative;
@@ -125,11 +126,11 @@
             <div id="selection-box"></div>
             <div id="ui-layer">
                 <h2 style="margin:0">SECTOR 7G</h2>
-                <small>Polygons closed. Spawns safe. Camera fixed.</small>
+                <small>Touch: 2-Finger Pan | 1-Finger Select/Move</small>
             </div>
         </div>
         <div id="sidebar" id="sidebar">
-            <div class="title">RED ALERT v9<br><span style="font-size:10px; color:lime">BUG FIXES</span></div>
+            <div class="title">RED ALERT v9<br><span style="font-size:10px; color:lime">TOUCH UPDATE</span></div>
             <div class="radar" id="radar"></div>
             <div class="build-btn" onclick="world.trySpawn('tank')">BUILD TANK ($800)</div>
             <div class="build-btn" onclick="world.trySpawn('soldier')">BUILD RIFLE ($100)</div>
@@ -185,10 +186,8 @@
             isBlocked(x, y) {
                 const c = Math.floor(x / this.cellSize);
                 const r = Math.floor(y / this.cellSize);
-                if (r >= 0 && r < this.rows && c >= 0 && c < this.cols) {
-                    return this.grid[r][c] === 1;
-                }
-                return true; // Out of bounds is blocked
+                if (r >= 0 && r < this.rows && c >= 0 && c < this.cols) return this.grid[r][c] === 1;
+                return true;
             }
             findPath(startX, startY, endX, endY) {
                 const startNode = { x: Math.floor(startX / this.cellSize), y: Math.floor(startY / this.cellSize) };
@@ -196,7 +195,6 @@
 
                 if (startNode.x < 0 || startNode.x >= this.cols || startNode.y < 0 || startNode.y >= this.rows) return [];
                 if (endNode.x < 0 || endNode.x >= this.cols || endNode.y < 0 || endNode.y >= this.rows) return [];
-
                 if (this.grid[endNode.y][endNode.x] === 1) return [];
 
                 const openSet = [];
@@ -221,10 +219,7 @@
                     openSet.splice(lowestIndex, 1);
                     closedSet.add(`${current.x},${current.y}`);
 
-                    const neighbors = [
-                        { x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 },
-                        { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: 1, y: 1 }
-                    ];
+                    const neighbors = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }, { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: 1, y: 1 }];
 
                     for (let neighbor of neighbors) {
                         const nx = current.x + neighbor.x;
@@ -259,42 +254,20 @@
                 this.x = 1000; this.y = 1000;
                 this.velX = 0; this.velY = 0;
                 this.target = null;
-                this.friction = 0.92;
-                this.acceleration = 0.6;
-                this.maxSpeed = 15;
+                this.friction = 0.85;
             }
             update() {
                 if (this.target) {
                     const tx = this.target.x - canvas.width / 2;
                     const ty = this.target.y - canvas.height / 2;
-                    this.velX += (tx - this.x) * 0.05; this.velY += (ty - this.y) * 0.05;
-                    this.velX *= 0.8; this.velY *= 0.8;
+                    this.x += (tx - this.x) * 0.1;
+                    this.y += (ty - this.y) * 0.1;
                 } else {
-                    let px = 0, py = 0, margin = 50;
-
-                    // BUG FIX: Prevent camera move if mouse is over Sidebar
-                    // We check if mouse is within the canvas bounds [0, canvas.width]
-                    const inBounds = mouseScreenX >= 0 && mouseScreenX <= canvas.width &&
-                        mouseScreenY >= 0 && mouseScreenY <= canvas.height;
-
-                    if (inBounds) {
-                        if (mouseScreenX < margin) px = -1;
-                        if (mouseScreenX > canvas.width - margin) px = 1;
-                        if (mouseScreenY < margin) py = -1;
-                        if (mouseScreenY > canvas.height - margin) py = 1;
-                    }
-
-                    if (px !== 0) this.velX += px * this.acceleration;
-                    if (py !== 0) this.velY += py * this.acceleration;
-
-                    this.velX = clamp(this.velX, -this.maxSpeed, this.maxSpeed);
-                    this.velY = clamp(this.velY, -this.maxSpeed, this.maxSpeed);
-
-                    if (px === 0) this.velX *= this.friction;
-                    if (py === 0) this.velY *= this.friction;
+                    this.x += this.velX;
+                    this.y += this.velY;
+                    this.velX *= this.friction;
+                    this.velY *= this.friction;
                 }
-                this.x += this.velX; this.y += this.velY;
-
                 if (this.x < 0) { this.x = 0; this.velX = 0; }
                 if (this.y < 0) { this.y = 0; this.velY = 0; }
                 if (this.x > WORLD_W - canvas.width) { this.x = WORLD_W - canvas.width; this.velX = 0; }
@@ -320,21 +293,17 @@
             draw() {
                 ctx.translate(this.x, this.y);
                 if (this.type === 'tree') {
-                    // BUG FIX: Restored V7 Tree Look (3 layers)
                     ctx.fillStyle = '#1a331a'; ctx.beginPath(); ctx.arc(3, 3, this.radius, 0, Math.PI * 2); ctx.fill();
                     ctx.fillStyle = '#2d5a2d'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill();
                     ctx.fillStyle = '#3e7a3e'; ctx.beginPath(); ctx.arc(-this.radius * 0.3, -this.radius * 0.3, this.radius * 0.4, 0, Math.PI * 2); ctx.fill();
                 } else if (this.type === 'rock') {
                     ctx.fillStyle = '#555'; ctx.beginPath(); ctx.moveTo(this.points[0].x, this.points[0].y);
                     this.points.forEach(p => ctx.lineTo(p.x, p.y));
-                    ctx.closePath(); // BUG FIX: Close Polygon
-                    ctx.fill(); ctx.strokeStyle = '#666'; ctx.stroke();
+                    ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#666'; ctx.stroke();
                 } else if (this.type === 'lake') {
                     ctx.fillStyle = '#346b85'; ctx.beginPath(); ctx.moveTo(this.points[0].x, this.points[0].y);
                     this.points.forEach(p => ctx.lineTo(p.x, p.y));
-                    ctx.closePath(); // BUG FIX: Close Polygon
-                    ctx.fill();
-                    ctx.strokeStyle = '#5a9bc0'; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#5a9bc0'; ctx.lineWidth = 2; ctx.stroke();
                 } else {
                     ctx.fillStyle = '#111'; ctx.fillRect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
                     ctx.fillStyle = '#444'; ctx.fillRect(-this.radius + 2, -this.radius + 2, this.radius * 2 - 4, this.radius * 2 - 4);
@@ -351,13 +320,19 @@
                 this.path = []; this.currentTarget = null;
 
                 if (type === 'tank') {
-                    this.color = '#ccaa00'; this.radius = 28;
+                    this.color = '#ccaa00';
+                    this.radius = 35; // Visual Radius
+                    this.collisionRadius = 38; // Physics Radius
                     this.maxSpeed = 3.0; this.acceleration = 0.08; this.brakingForce = 0.15;
                     this.friction = 0.98; this.turnSpeed = 0.04; this.health = 100;
+                    this.mass = 10;
                 } else {
-                    this.color = '#aaaaaa'; this.radius = 10;
+                    this.color = '#aaaaaa';
+                    this.radius = 12;
+                    this.collisionRadius = 15;
                     this.maxSpeed = 1.8; this.acceleration = 0.2; this.brakingForce = 0.3;
                     this.friction = 0.85; this.turnSpeed = 0.3; this.health = 30;
+                    this.mass = 1;
                 }
             }
             update() {
@@ -421,31 +396,30 @@
                 ctx.translate(this.x, this.y);
                 if (this.selected) {
                     ctx.strokeStyle = '#00ff00'; ctx.lineWidth = 1; ctx.beginPath();
-                    ctx.arc(0, 0, this.radius + 2, 0, Math.PI * 2); ctx.stroke();
+                    ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.stroke();
                     ctx.fillStyle = '#00ff00'; ctx.fillRect(-12, -this.radius - 8, 24 * (this.health / 100), 3);
                 }
                 ctx.rotate(this.angle);
                 if (this.type === 'tank') {
-                    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(-15, -10, 36, 28);
-                    ctx.fillStyle = this.color; ctx.fillRect(-18, -14, 36, 28);
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(-17, -12, 40, 32);
+                    ctx.fillStyle = this.color; ctx.fillRect(-20, -16, 40, 32);
+                    ctx.fillStyle = '#080808'; ctx.fillRect(-20, -18, 40, 4); ctx.fillRect(-20, 14, 40, 4);
                     if (this.isBraking) {
                         ctx.fillStyle = '#ff0000'; ctx.shadowColor = '#ff0000'; ctx.shadowBlur = 10;
-                        ctx.fillRect(-18, -12, 2, 6); ctx.fillRect(-18, 6, 2, 6); ctx.shadowBlur = 0;
+                        ctx.fillRect(-20, -14, 3, 6); ctx.fillRect(-20, 8, 3, 6); ctx.shadowBlur = 0;
                     }
-                    ctx.fillStyle = '#080808'; ctx.fillRect(-18, -16, 36, 4); ctx.fillRect(-18, 12, 36, 4);
-                    ctx.fillStyle = '#333'; for (let i = -16; i < 16; i += 4) { ctx.fillRect(i, -16, 1, 4); ctx.fillRect(i, 12, 1, 4); }
-                    ctx.fillStyle = '#997700'; ctx.beginPath(); ctx.arc(-2, 0, 11, 0, Math.PI * 2); ctx.fill();
-                    ctx.strokeStyle = '#886600'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(26, 0); ctx.stroke();
+                    ctx.fillStyle = '#997700'; ctx.beginPath(); ctx.arc(-2, 0, 13, 0, Math.PI * 2); ctx.fill();
+                    ctx.strokeStyle = '#886600'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(30, 0); ctx.stroke();
                 } else {
-                    ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = '#222'; ctx.fillRect(0, -2, 10, 4);
+                    ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = '#222'; ctx.fillRect(0, -3, 12, 6);
                 }
                 ctx.rotate(-this.angle);
                 ctx.translate(-this.x, -this.y);
             }
 
             setPath(path, finalX, finalY) {
-                const spread = 40;
+                const spread = 80;
                 this.currentTarget = {
                     x: finalX + (Math.random() * spread - spread / 2),
                     y: finalY + (Math.random() * spread - spread / 2)
@@ -481,7 +455,6 @@
             }
 
             generateMap() {
-                // Forests
                 for (let i = 0; i < 40; i++) {
                     const cx = Math.random() * WORLD_W; const cy = Math.random() * WORLD_H;
                     for (let j = 0; j < 10; j++) {
@@ -489,11 +462,8 @@
                         this.addObstacle(new Obstacle(tx, ty, 15 + Math.random() * 15, 'tree'));
                     }
                 }
-                // Rocks
                 for (let i = 0; i < 30; i++) this.addObstacle(new Obstacle(Math.random() * WORLD_W, Math.random() * WORLD_H, 30 + Math.random() * 30, 'rock'));
-                // Lakes
                 for (let i = 0; i < 8; i++) this.addObstacle(new Obstacle(Math.random() * WORLD_W, Math.random() * WORLD_H, 80 + Math.random() * 60, 'lake'));
-                // Buildings
                 for (let i = 0; i < 15; i++) this.addObstacle(new Obstacle(Math.random() * WORLD_W, Math.random() * WORLD_H, 60 + Math.random() * 20, 'building'));
 
                 this.obstacles = this.obstacles.filter(o => dist(o.x, o.y, 1000, 1000) > 300);
@@ -503,52 +473,52 @@
             addObstacle(obs) { this.obstacles.push(obs); }
 
             resolveCollisions() {
-                for (let i = 0; i < this.units.length; i++) {
-                    for (let j = i + 1; j < this.units.length; j++) {
-                        const u1 = this.units[i]; const u2 = this.units[j];
-                        const d = dist(u1.x, u1.y, u2.x, u2.y);
-                        const minD = u1.radius + u2.radius;
-                        if (d < minD) {
-                            const overlap = minD - d;
-                            const angle = Math.atan2(u1.y - u2.y, u1.x - u2.x);
-                            const force = overlap * 0.1;
-                            const px = Math.cos(angle) * force; const py = Math.sin(angle) * force;
-                            u1.x += px; u1.y += py; u2.x -= px; u2.y -= py;
-                            u1.currentSpeed *= 0.95; u2.currentSpeed *= 0.95;
+                const iterations = 3;
+                for (let k = 0; k < iterations; k++) {
+                    for (let i = 0; i < this.units.length; i++) {
+                        for (let j = i + 1; j < this.units.length; j++) {
+                            const u1 = this.units[i]; const u2 = this.units[j];
+                            const d = dist(u1.x, u1.y, u2.x, u2.y);
+                            const minD = u1.collisionRadius + u2.collisionRadius;
+
+                            if (d < minD && d > 0) {
+                                const overlap = minD - d;
+                                const angle = Math.atan2(u1.y - u2.y, u1.x - u2.x);
+                                const totalMass = u1.mass + u2.mass;
+                                const m1 = u2.mass / totalMass; const m2 = u1.mass / totalMass;
+                                const moveX = Math.cos(angle) * overlap; const moveY = Math.sin(angle) * overlap;
+
+                                u1.x += moveX * m1; u1.y += moveY * m1;
+                                u2.x -= moveX * m2; u2.y -= moveY * m2;
+                                u1.currentSpeed *= 0.9; u2.currentSpeed *= 0.9;
+                            }
                         }
                     }
-                }
-                for (let u of this.units) {
-                    for (let o of this.obstacles) {
-                        const d = dist(u.x, u.y, o.x, o.y);
-                        const minD = u.radius + o.radius;
-                        if (d < minD) {
-                            const overlap = minD - d;
-                            const angle = Math.atan2(u.y - o.y, u.x - o.x);
-                            u.x += Math.cos(angle) * overlap;
-                            u.y += Math.sin(angle) * overlap;
-                            u.currentSpeed *= 0.8;
+                    for (let u of this.units) {
+                        for (let o of this.obstacles) {
+                            const d = dist(u.x, u.y, o.x, o.y);
+                            const minD = u.collisionRadius + o.radius;
+                            if (d < minD) {
+                                const overlap = minD - d;
+                                const angle = Math.atan2(u.y - o.y, u.x - o.x);
+                                u.x += Math.cos(angle) * overlap;
+                                u.y += Math.sin(angle) * overlap;
+                                u.currentSpeed *= 0.5;
+                            }
                         }
                     }
                 }
             }
 
             trySpawn(type) {
-                // BUG FIX: Retry loop to prevent spawning on obstacles
                 const range = 200;
                 let bestX = 0, bestY = 0, found = false;
-
                 for (let i = 0; i < 20; i++) {
                     const rx = camera.x + canvas.width / 2 + (Math.random() * range - range / 2);
                     const ry = camera.y + canvas.height / 2 + (Math.random() * range - range / 2);
-
-                    // Check if this spot is blocked by grid
-                    if (!this.grid.isBlocked(rx, ry)) {
-                        bestX = rx; bestY = ry; found = true; break;
-                    }
+                    if (!this.grid.isBlocked(rx, ry)) { bestX = rx; bestY = ry; found = true; break; }
                 }
                 if (found) this.units.push(new Unit(bestX, bestY, type));
-                else console.log("Spawn failed - location blocked");
             }
 
             update() {
@@ -581,13 +551,11 @@
             updateRadar() {
                 radar.innerHTML = '';
                 const sx = 250 / WORLD_W; const sy = 200 / WORLD_H;
-
                 const vDiv = document.createElement('div');
                 vDiv.className = 'radar-view';
                 vDiv.style.left = (camera.x * sx) + 'px'; vDiv.style.top = (camera.y * sy) + 'px';
                 vDiv.style.width = (canvas.width * sx) + 'px'; vDiv.style.height = (canvas.height * sy) + 'px';
                 radar.appendChild(vDiv);
-
                 this.units.forEach(u => {
                     const d = document.createElement('div'); d.className = 'radar-dot';
                     if (u.type === 'tank') d.style.background = 'gold';
@@ -600,10 +568,258 @@
         // --- Input Handling ---
         const world = new World();
         const camera = new Camera();
-        let mouseScreenX = 0, mouseScreenY = 0;
-        let isDragging = false;
-        let startWorldX, startWorldY;
 
+        let pointerDown = false;
+        let isRightClick = false;
+        let isTwoFinger = false;
+
+        let startX = 0, startY = 0; // For Selection Box / Tap detection
+        let lastPanX = 0, lastPanY = 0; // For Panning
+        let hasMoved = false;
+
+        function getTouchCenter(e) {
+            if (e.touches.length >= 2) {
+                return {
+                    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+                };
+            }
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+
+        function handleStart(e) {
+            if (e.target !== canvas) return;
+            pointerDown = true;
+            hasMoved = false;
+            camera.target = null;
+
+            // Touch Logic
+            if (e.type === 'touchstart') {
+                if (e.touches.length === 2) {
+                    // 2 Fingers = Pan Mode
+                    isTwoFinger = true;
+                    const center = getTouchCenter(e);
+                    lastPanX = center.x;
+                    lastPanY = center.y;
+                    selectionBox.style.display = 'none'; // Cancel any selection
+                } else if (e.touches.length === 1) {
+                    // 1 Finger = Select Mode (Tap or Box)
+                    isTwoFinger = false;
+                    startX = e.touches[0].clientX;
+                    startY = e.touches[0].clientY;
+
+                    selectionBox.style.display = 'block';
+                    selectionBox.style.left = startX + 'px';
+                    selectionBox.style.top = startY + 'px';
+                    selectionBox.style.width = '0'; selectionBox.style.height = '0';
+                }
+            }
+            // Mouse Logic
+            else {
+                isTwoFinger = false;
+                startX = e.clientX;
+                startY = e.clientY;
+                lastPanX = e.clientX;
+                lastPanY = e.clientY;
+                isRightClick = (e.button === 2);
+
+                if (isRightClick) {
+                    // Right Mouse Down = Box Select
+                    selectionBox.style.display = 'block';
+                    selectionBox.style.left = startX + 'px';
+                    selectionBox.style.top = startY + 'px';
+                    selectionBox.style.width = '0'; selectionBox.style.height = '0';
+                } else {
+                    // Left Mouse Down = Pan
+                    camera.velX = 0; camera.velY = 0;
+                }
+            }
+        }
+
+        function handleMove(e) {
+            if (!pointerDown) return;
+
+            // Check threshold for "Tap" vs "Drag"
+            let curX, curY;
+            if (e.type.startsWith('touch')) {
+                const center = getTouchCenter(e);
+                curX = center.x; curY = center.y;
+            } else {
+                curX = e.clientX; curY = e.clientY;
+            }
+
+            // Only mark as moved if shifted significantly (avoids micro-jitters)
+            if (!isTwoFinger && (Math.abs(curX - startX) > 10 || Math.abs(curY - startY) > 10)) {
+                hasMoved = true;
+            }
+            if (isTwoFinger && (Math.abs(curX - lastPanX) > 2 || Math.abs(curY - lastPanY) > 2)) {
+                hasMoved = true;
+            }
+
+            // --- TOUCH MOVE ---
+            if (e.type === 'touchmove') {
+                e.preventDefault(); // Stop Scroll
+                if (isTwoFinger) {
+                    // 2 Finger Pan
+                    const center = getTouchCenter(e);
+                    const dx = center.x - lastPanX;
+                    const dy = center.y - lastPanY;
+                    camera.x -= dx; camera.y -= dy; // Move map opposite to finger
+                    camera.velX = -dx; camera.velY = -dy;
+                    lastPanX = center.x; lastPanY = center.y;
+                } else {
+                    // 1 Finger Box Select
+                    if (hasMoved) {
+                        const rect = canvas.getBoundingClientRect();
+                        const clientX = e.touches[0].clientX - rect.left;
+                        const clientY = e.touches[0].clientY - rect.top;
+                        const startRelX = startX - rect.left;
+                        const startRelY = startY - rect.top;
+
+                        const w = clientX - startRelX;
+                        const h = clientY - startRelY;
+                        selectionBox.style.width = Math.abs(w) + 'px';
+                        selectionBox.style.height = Math.abs(h) + 'px';
+                        selectionBox.style.left = (w < 0 ? clientX + rect.left : startX) + 'px';
+                        selectionBox.style.top = (h < 0 ? clientY + rect.top : startY) + 'px';
+                    }
+                }
+            }
+            // --- MOUSE MOVE ---
+            else {
+                if (isRightClick) {
+                    // Right Drag = Box Select
+                    if (hasMoved) {
+                        const rect = canvas.getBoundingClientRect();
+                        const clientX = e.clientX - rect.left;
+                        const clientY = e.clientY - rect.top;
+                        const startRelX = startX - rect.left;
+                        const startRelY = startY - rect.top;
+
+                        const w = clientX - startRelX;
+                        const h = clientY - startRelY;
+                        selectionBox.style.width = Math.abs(w) + 'px';
+                        selectionBox.style.height = Math.abs(h) + 'px';
+                        selectionBox.style.left = (w < 0 ? clientX + rect.left : startX) + 'px';
+                        selectionBox.style.top = (h < 0 ? clientY + rect.top : startY) + 'px';
+                    }
+                } else {
+                    // Left Drag = Pan
+                    const dx = e.clientX - lastPanX;
+                    const dy = e.clientY - lastPanY;
+                    camera.x -= dx; camera.y -= dy;
+                    camera.velX = -dx; camera.velY = -dy;
+                    lastPanX = e.clientX; lastPanY = e.clientY;
+                }
+            }
+        }
+
+        function handleEnd(e) {
+            if (!pointerDown) return;
+            pointerDown = false;
+            selectionBox.style.display = 'none';
+
+            const rect = canvas.getBoundingClientRect();
+
+            // --- CLICK / TAP (No Movement) ---
+            if (!hasMoved && !isTwoFinger) {
+                let clientX, clientY;
+                if (e.type === 'touchend') {
+                    // Use start coords because changedTouches might be empty or confusing
+                    clientX = startX; clientY = startY;
+                } else {
+                    clientX = e.clientX; clientY = e.clientY;
+                }
+
+                const worldX = (clientX - rect.left) + camera.x;
+                const worldY = (clientY - rect.top) + camera.y;
+
+                if (isRightClick) {
+                    // Desktop Right Click = Move Command
+                    issueMoveCommand(worldX, worldY);
+                } else {
+                    // Desktop Left Click OR Touch Tap
+                    // Logic: If tapped on Unit -> Select. If tapped on Ground -> Move (if units selected).
+                    let clickedUnit = false;
+                    world.units.forEach(u => {
+                        if (dist(u.x, u.y, worldX, worldY) < u.radius + 15) clickedUnit = true;
+                    });
+
+                    const hasSelection = world.units.some(u => u.selected);
+
+                    if (clickedUnit) {
+                        // Select Logic
+                        world.units.forEach(u => u.selected = false);
+                        world.units.forEach(u => {
+                            if (dist(u.x, u.y, worldX, worldY) < u.radius + 15) u.selected = true;
+                        });
+                    } else {
+                        if (hasSelection && e.type === 'touchend') {
+                            // Touch: Tap on empty ground with selection = Move
+                            issueMoveCommand(worldX, worldY);
+                        } else {
+                            // Deselect All
+                            world.units.forEach(u => u.selected = false);
+                        }
+                    }
+                }
+            }
+            // --- DRAG END (Selection Box Finalize) ---
+            else if (hasMoved) {
+                // If it was Right Drag (Mouse) or 1-Finger Drag (Touch) -> Select Units in Box
+                if ((isRightClick) || (e.type === 'touchend' && !isTwoFinger)) {
+                    // Get end coordinates. For touch, use last known position?
+                    // changedTouches[0] usually available
+                    let endX, endY;
+                    if (e.type === 'touchend') {
+                        if (e.changedTouches.length > 0) {
+                            endX = e.changedTouches[0].clientX;
+                            endY = e.changedTouches[0].clientY;
+                        } else { endX = startX; endY = startY; }
+                    } else {
+                        endX = e.clientX; endY = e.clientY;
+                    }
+
+                    const wx1 = (startX - rect.left) + camera.x; const wy1 = (startY - rect.top) + camera.y;
+                    const wx2 = (endX - rect.left) + camera.x; const wy2 = (endY - rect.top) + camera.y;
+
+                    const x1 = Math.min(wx1, wx2); const y1 = Math.min(wy1, wy2);
+                    const x2 = Math.max(wx1, wx2); const y2 = Math.max(wy1, wy2);
+
+                    world.units.forEach(u => u.selected = false);
+                    world.units.forEach(u => {
+                        if (u.x > x1 && u.x < x2 && u.y > y1 && u.y < y2) u.selected = true;
+                    });
+                }
+            }
+
+            isRightClick = false;
+            isTwoFinger = false;
+        }
+
+        function issueMoveCommand(wx, wy) {
+            world.particles.push(new MoveMarker(wx, wy));
+            world.units.forEach(u => {
+                if (u.selected) {
+                    const path = world.grid.findPath(u.x, u.y, wx, wy);
+                    u.setPath(path, wx, wy);
+                }
+            });
+        }
+
+        // Listeners
+        canvas.addEventListener('mousedown', handleStart);
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleEnd);
+
+        canvas.addEventListener('touchstart', handleStart, { passive: false });
+        window.addEventListener('touchmove', handleMove, { passive: false });
+        window.addEventListener('touchend', handleEnd);
+
+        // Desktop Context Menu (Disable default right click menu)
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        // Radar navigation
         radar.addEventListener('mousedown', e => {
             const rect = radar.getBoundingClientRect();
             const cx = e.clientX - rect.left;
@@ -611,55 +827,6 @@
             camera.x = ((cx / 250) * WORLD_W) - canvas.width / 2;
             camera.y = ((cy / 200) * WORLD_H) - canvas.height / 2;
             camera.velX = 0; camera.velY = 0; camera.target = null;
-        });
-
-        window.addEventListener('mousemove', e => {
-            const rect = canvas.getBoundingClientRect();
-            mouseScreenX = e.clientX - rect.left;
-            mouseScreenY = e.clientY - rect.top;
-            if (isDragging) {
-                const worldX = mouseScreenX + camera.x; const worldY = mouseScreenY + camera.y;
-                const w = worldX - startWorldX; const h = worldY - startWorldY;
-                selectionBox.style.width = Math.abs(w) + 'px'; selectionBox.style.height = Math.abs(h) + 'px';
-                selectionBox.style.left = (w < 0 ? mouseScreenX : mouseScreenX - w) + 'px';
-                selectionBox.style.top = (h < 0 ? mouseScreenY : mouseScreenY - h) + 'px';
-            }
-        });
-
-        canvas.addEventListener('mousedown', e => {
-            if (e.button !== 0) return;
-            isDragging = true; camera.target = null;
-            startWorldX = mouseScreenX + camera.x; startWorldY = mouseScreenY + camera.y;
-            selectionBox.style.display = 'block';
-            selectionBox.style.left = mouseScreenX + 'px'; selectionBox.style.top = mouseScreenY + 'px';
-            selectionBox.style.width = '0'; selectionBox.style.height = '0';
-        });
-
-        canvas.addEventListener('mouseup', e => {
-            if (e.button !== 0) return;
-            isDragging = false; selectionBox.style.display = 'none';
-            const endWorldX = mouseScreenX + camera.x; const endWorldY = mouseScreenY + camera.y;
-            const x1 = Math.min(startWorldX, endWorldX); const y1 = Math.min(startWorldY, endWorldY);
-            const x2 = Math.max(startWorldX, endWorldX); const y2 = Math.max(startWorldY, endWorldY);
-            world.units.forEach(u => u.selected = false);
-            if (Math.abs(x2 - x1) > 5 || Math.abs(y2 - y1) > 5) {
-                world.units.forEach(u => { if (u.x > x1 && u.x < x2 && u.y > y1 && u.y < y2) u.selected = true; });
-            } else {
-                world.units.forEach(u => { if (dist(u.x, u.y, endWorldX, endWorldY) < u.radius + 5) u.selected = true; });
-            }
-        });
-
-        window.addEventListener('contextmenu', e => {
-            e.preventDefault();
-            const worldX = mouseScreenX + camera.x;
-            const worldY = mouseScreenY + camera.y;
-            world.particles.push(new MoveMarker(worldX, worldY));
-            world.units.forEach(u => {
-                if (u.selected) {
-                    const path = world.grid.findPath(u.x, u.y, worldX, worldY);
-                    u.setPath(path, worldX, worldY);
-                }
-            });
         });
 
         window.addEventListener('keydown', e => {
