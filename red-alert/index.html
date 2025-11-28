@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Red Alert Clone V7 (A* Pathfinding)</title>
+    <title>Red Alert Clone V9 (Bug Fixes)</title>
     <style>
         body {
             margin: 0;
@@ -12,13 +12,16 @@
             font-family: 'Courier New', Courier, monospace;
         }
 
+        /* Flex Container to split Game and Sidebar */
         #game-container {
             display: flex;
             height: 100vh;
+            width: 100vw;
         }
 
+        /* Canvas takes remaining width */
         #canvas-container {
-            flex-grow: 1;
+            flex: 1;
             position: relative;
             cursor: crosshair;
             overflow: hidden;
@@ -59,13 +62,14 @@
         }
 
         .radar {
-            width: 100%;
+            width: 250px;
             height: 200px;
             background: #000;
             border: 2px solid #005500;
             margin-bottom: 20px;
             position: relative;
             overflow: hidden;
+            cursor: crosshair;
         }
 
         .radar-dot {
@@ -73,6 +77,13 @@
             width: 2px;
             height: 2px;
             background: #0f0;
+            pointer-events: none;
+        }
+
+        .radar-view {
+            position: absolute;
+            border: 1px solid white;
+            pointer-events: none;
         }
 
         .build-btn {
@@ -114,11 +125,11 @@
             <div id="selection-box"></div>
             <div id="ui-layer">
                 <h2 style="margin:0">SECTOR 7G</h2>
-                <small>Units now navigate AROUND obstacles.</small>
+                <small>Polygons closed. Spawns safe. Camera fixed.</small>
             </div>
         </div>
-        <div id="sidebar">
-            <div class="title">RED ALERT v7<br><span style="font-size:10px; color:orange">A* PATHFINDING</span></div>
+        <div id="sidebar" id="sidebar">
+            <div class="title">RED ALERT v9<br><span style="font-size:10px; color:lime">BUG FIXES</span></div>
             <div class="radar" id="radar"></div>
             <div class="build-btn" onclick="world.trySpawn('tank')">BUILD TANK ($800)</div>
             <div class="build-btn" onclick="world.trySpawn('soldier')">BUILD RIFLE ($100)</div>
@@ -133,7 +144,7 @@
 
         const WORLD_W = 3000;
         const WORLD_H = 3000;
-        const GRID_SIZE = 50; // Size of pathfinding cells
+        const GRID_SIZE = 50;
 
         function resize() {
             canvas.width = document.getElementById('canvas-container').offsetWidth;
@@ -147,26 +158,19 @@
         const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
         const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
 
-        // --- A* Pathfinding Logic ---
-
+        // --- Pathfinding ---
         class Grid {
             constructor(width, height, cellSize) {
                 this.cellSize = cellSize;
                 this.cols = Math.ceil(width / cellSize);
                 this.rows = Math.ceil(height / cellSize);
-                this.grid = []; // 0 = Walkable, 1 = Blocked
-
-                // Init Grid
+                this.grid = [];
                 for (let y = 0; y < this.rows; y++) {
                     this.grid[y] = [];
-                    for (let x = 0; x < this.cols; x++) {
-                        this.grid[y][x] = 0;
-                    }
+                    for (let x = 0; x < this.cols; x++) this.grid[y][x] = 0;
                 }
             }
-
             markObstacle(x, y, radius) {
-                // Determine grid bounds for this obstacle
                 const startCol = Math.floor((x - radius) / this.cellSize);
                 const endCol = Math.floor((x + radius) / this.cellSize);
                 const startRow = Math.floor((y - radius) / this.cellSize);
@@ -174,60 +178,49 @@
 
                 for (let r = startRow; r <= endRow; r++) {
                     for (let c = startCol; c <= endCol; c++) {
-                        if (r >= 0 && r < this.rows && c >= 0 && c < this.cols) {
-                            this.grid[r][c] = 1; // Mark blocked
-                        }
+                        if (r >= 0 && r < this.rows && c >= 0 && c < this.cols) this.grid[r][c] = 1;
                     }
                 }
             }
-
-            // The A* Algorithm
+            isBlocked(x, y) {
+                const c = Math.floor(x / this.cellSize);
+                const r = Math.floor(y / this.cellSize);
+                if (r >= 0 && r < this.rows && c >= 0 && c < this.cols) {
+                    return this.grid[r][c] === 1;
+                }
+                return true; // Out of bounds is blocked
+            }
             findPath(startX, startY, endX, endY) {
                 const startNode = { x: Math.floor(startX / this.cellSize), y: Math.floor(startY / this.cellSize) };
                 const endNode = { x: Math.floor(endX / this.cellSize), y: Math.floor(endY / this.cellSize) };
 
-                // Clamp to grid
                 if (startNode.x < 0 || startNode.x >= this.cols || startNode.y < 0 || startNode.y >= this.rows) return [];
                 if (endNode.x < 0 || endNode.x >= this.cols || endNode.y < 0 || endNode.y >= this.rows) return [];
 
-                // If target is blocked, find nearest open neighbor (simple adjustment)
                 if (this.grid[endNode.y][endNode.x] === 1) return [];
 
                 const openSet = [];
                 const closedSet = new Set();
-
-                // Initial Node
                 openSet.push({ ...startNode, g: 0, h: 0, f: 0, parent: null });
 
                 while (openSet.length > 0) {
-                    // Find node with lowest F score
                     let lowestIndex = 0;
-                    for (let i = 1; i < openSet.length; i++) {
-                        if (openSet[i].f < openSet[lowestIndex].f) lowestIndex = i;
-                    }
-
+                    for (let i = 1; i < openSet.length; i++) if (openSet[i].f < openSet[lowestIndex].f) lowestIndex = i;
                     let current = openSet[lowestIndex];
 
-                    // Check if reached end
                     if (current.x === endNode.x && current.y === endNode.y) {
                         let path = [];
                         let temp = current;
                         while (temp.parent) {
-                            // Convert grid coords back to world coords (center of cell)
-                            path.push({
-                                x: temp.x * this.cellSize + this.cellSize / 2,
-                                y: temp.y * this.cellSize + this.cellSize / 2
-                            });
+                            path.push({ x: temp.x * this.cellSize + this.cellSize / 2, y: temp.y * this.cellSize + this.cellSize / 2 });
                             temp = temp.parent;
                         }
                         return path.reverse();
                     }
 
-                    // Move current from Open to Closed
                     openSet.splice(lowestIndex, 1);
                     closedSet.add(`${current.x},${current.y}`);
 
-                    // Neighbors (Up, Down, Left, Right, Diagonals)
                     const neighbors = [
                         { x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 },
                         { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: 1, y: 1 }
@@ -236,21 +229,16 @@
                     for (let neighbor of neighbors) {
                         const nx = current.x + neighbor.x;
                         const ny = current.y + neighbor.y;
-
-                        // Bounds check & Blocked check
                         if (nx < 0 || ny < 0 || nx >= this.cols || ny >= this.rows) continue;
                         if (this.grid[ny][nx] === 1) continue;
                         if (closedSet.has(`${nx},${ny}`)) continue;
 
-                        // Calculate G cost (distance from start)
-                        // Diagonals cost 1.4, straights 1.0
                         const distCost = (Math.abs(neighbor.x) + Math.abs(neighbor.y) === 2) ? 1.4 : 1.0;
                         const tempG = current.g + distCost;
 
                         let neighborNode = openSet.find(n => n.x === nx && n.y === ny);
                         if (!neighborNode) {
                             neighborNode = { x: nx, y: ny, g: tempG, h: 0, f: 0, parent: current };
-                            // H heuristic: Manhattan distance
                             neighborNode.h = Math.abs(nx - endNode.x) + Math.abs(ny - endNode.y);
                             neighborNode.f = neighborNode.g + neighborNode.h;
                             openSet.push(neighborNode);
@@ -261,16 +249,19 @@
                         }
                     }
                 }
-                return []; // No path found
+                return [];
             }
         }
 
-        // --- Camera & Objects ---
-
+        // --- Camera ---
         class Camera {
             constructor() {
-                this.x = 1000; this.y = 1000; this.velX = 0; this.velY = 0;
-                this.target = null; this.friction = 0.9; this.acceleration = 2.0;
+                this.x = 1000; this.y = 1000;
+                this.velX = 0; this.velY = 0;
+                this.target = null;
+                this.friction = 0.92;
+                this.acceleration = 0.6;
+                this.maxSpeed = 15;
             }
             update() {
                 if (this.target) {
@@ -280,25 +271,48 @@
                     this.velX *= 0.8; this.velY *= 0.8;
                 } else {
                     let px = 0, py = 0, margin = 50;
-                    if (mouseScreenX < margin) px = -1; if (mouseScreenX > canvas.width - margin) px = 1;
-                    if (mouseScreenY < margin) py = -1; if (mouseScreenY > canvas.height - margin) py = 1;
-                    if (px !== 0) this.velX += px * this.acceleration; if (py !== 0) this.velY += py * this.acceleration;
-                    this.velX *= this.friction; this.velY *= this.friction;
+
+                    // BUG FIX: Prevent camera move if mouse is over Sidebar
+                    // We check if mouse is within the canvas bounds [0, canvas.width]
+                    const inBounds = mouseScreenX >= 0 && mouseScreenX <= canvas.width &&
+                        mouseScreenY >= 0 && mouseScreenY <= canvas.height;
+
+                    if (inBounds) {
+                        if (mouseScreenX < margin) px = -1;
+                        if (mouseScreenX > canvas.width - margin) px = 1;
+                        if (mouseScreenY < margin) py = -1;
+                        if (mouseScreenY > canvas.height - margin) py = 1;
+                    }
+
+                    if (px !== 0) this.velX += px * this.acceleration;
+                    if (py !== 0) this.velY += py * this.acceleration;
+
+                    this.velX = clamp(this.velX, -this.maxSpeed, this.maxSpeed);
+                    this.velY = clamp(this.velY, -this.maxSpeed, this.maxSpeed);
+
+                    if (px === 0) this.velX *= this.friction;
+                    if (py === 0) this.velY *= this.friction;
                 }
                 this.x += this.velX; this.y += this.velY;
-                if (this.x < 0) this.x = 0; if (this.y < 0) this.y = 0;
-                if (this.x > WORLD_W - canvas.width) this.x = WORLD_W - canvas.width;
-                if (this.y > WORLD_H - canvas.height) this.y = WORLD_H - canvas.height;
+
+                if (this.x < 0) { this.x = 0; this.velX = 0; }
+                if (this.y < 0) { this.y = 0; this.velY = 0; }
+                if (this.x > WORLD_W - canvas.width) { this.x = WORLD_W - canvas.width; this.velX = 0; }
+                if (this.y > WORLD_H - canvas.height) { this.y = WORLD_H - canvas.height; this.velY = 0; }
             }
         }
 
+        // --- Objects ---
         class Obstacle {
             constructor(x, y, r, type) {
                 this.x = x; this.y = y; this.radius = r; this.type = type;
-                if (type === 'rock') {
-                    this.points = []; const sides = 5 + Math.random() * 3;
+                if (type === 'rock' || type === 'lake') {
+                    this.points = [];
+                    const sides = (type === 'lake') ? 8 + Math.random() * 5 : 5 + Math.random() * 3;
                     for (let i = 0; i < sides; i++) {
-                        const angle = (i / sides) * Math.PI * 2; const rad = r * (0.8 + Math.random() * 0.4);
+                        const angle = (i / sides) * Math.PI * 2;
+                        const variance = (type === 'lake') ? 0.6 : 0.4;
+                        const rad = r * (1 - variance + Math.random() * variance);
                         this.points.push({ x: Math.cos(angle) * rad, y: Math.sin(angle) * rad });
                     }
                 }
@@ -306,12 +320,21 @@
             draw() {
                 ctx.translate(this.x, this.y);
                 if (this.type === 'tree') {
+                    // BUG FIX: Restored V7 Tree Look (3 layers)
                     ctx.fillStyle = '#1a331a'; ctx.beginPath(); ctx.arc(3, 3, this.radius, 0, Math.PI * 2); ctx.fill();
                     ctx.fillStyle = '#2d5a2d'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill();
                     ctx.fillStyle = '#3e7a3e'; ctx.beginPath(); ctx.arc(-this.radius * 0.3, -this.radius * 0.3, this.radius * 0.4, 0, Math.PI * 2); ctx.fill();
                 } else if (this.type === 'rock') {
                     ctx.fillStyle = '#555'; ctx.beginPath(); ctx.moveTo(this.points[0].x, this.points[0].y);
-                    this.points.forEach(p => ctx.lineTo(p.x, p.y)); ctx.fill(); ctx.strokeStyle = '#666'; ctx.stroke();
+                    this.points.forEach(p => ctx.lineTo(p.x, p.y));
+                    ctx.closePath(); // BUG FIX: Close Polygon
+                    ctx.fill(); ctx.strokeStyle = '#666'; ctx.stroke();
+                } else if (this.type === 'lake') {
+                    ctx.fillStyle = '#346b85'; ctx.beginPath(); ctx.moveTo(this.points[0].x, this.points[0].y);
+                    this.points.forEach(p => ctx.lineTo(p.x, p.y));
+                    ctx.closePath(); // BUG FIX: Close Polygon
+                    ctx.fill();
+                    ctx.strokeStyle = '#5a9bc0'; ctx.lineWidth = 2; ctx.stroke();
                 } else {
                     ctx.fillStyle = '#111'; ctx.fillRect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
                     ctx.fillStyle = '#444'; ctx.fillRect(-this.radius + 2, -this.radius + 2, this.radius * 2 - 4, this.radius * 2 - 4);
@@ -325,10 +348,7 @@
                 this.x = x; this.y = y; this.type = type; this.selected = false;
                 this.angle = Math.random() * Math.PI * 2;
                 this.currentSpeed = 0; this.isBraking = false;
-
-                // Pathfinding State
-                this.path = []; // Array of waypoints
-                this.currentTarget = null;
+                this.path = []; this.currentTarget = null;
 
                 if (type === 'tank') {
                     this.color = '#ccaa00'; this.radius = 28;
@@ -341,29 +361,17 @@
                 }
             }
             update() {
-                // Path Following Logic
                 if (this.path.length > 0) {
-                    // Look at next waypoint
                     const nextPoint = this.path[0];
-                    const distToPoint = dist(this.x, this.y, nextPoint.x, nextPoint.y);
-
-                    // If close to waypoint, remove it and move to next
-                    if (distToPoint < 30) {
-                        this.path.shift();
-                    } else {
-                        this.driveTo(nextPoint.x, nextPoint.y);
-                    }
+                    if (dist(this.x, this.y, nextPoint.x, nextPoint.y) < 30) this.path.shift();
+                    else this.driveTo(nextPoint.x, nextPoint.y);
                 } else if (this.currentTarget) {
-                    // Final Approach
                     this.driveTo(this.currentTarget.x, this.currentTarget.y);
                 } else {
-                    // Idle friction
                     this.currentSpeed *= this.friction;
                     this.x += Math.cos(this.angle) * this.currentSpeed;
                     this.y += Math.sin(this.angle) * this.currentSpeed;
                 }
-
-                // Dust
                 if (this.currentSpeed > 0.5 && this.type === 'tank' && !this.isBraking && Math.random() > 0.8) {
                     world.particles.push(new Dust(this.x - Math.cos(this.angle) * 15, this.y - Math.sin(this.angle) * 15));
                 }
@@ -379,17 +387,12 @@
 
                 this.isBraking = false;
                 let throttle = 0;
-                // Stop only if this is the FINAL target (path empty)
                 const isFinalTarget = (this.path.length === 0);
                 const stoppingDist = (this.currentSpeed * this.currentSpeed) / (2 * this.brakingForce);
 
-                if (isFinalTarget && (d < 5 || d < stoppingDist + 20)) {
-                    this.isBraking = true;
-                } else if (Math.abs(diff) > Math.PI / 4) {
-                    this.isBraking = true; // Cornering brake
-                } else {
-                    throttle = 1;
-                }
+                if (isFinalTarget && (d < 5 || d < stoppingDist + 20)) this.isBraking = true;
+                else if (Math.abs(diff) > Math.PI / 4) this.isBraking = true;
+                else throttle = 1;
 
                 if (this.isBraking) {
                     if (this.currentSpeed > 0) this.currentSpeed -= this.brakingForce;
@@ -407,11 +410,8 @@
                 if (this.x < camera.x - 50 || this.x > camera.x + canvas.width + 50 ||
                     this.y < camera.y - 50 || this.y > camera.y + canvas.height + 50) return;
 
-                // Draw Path Line (Debug)
                 if (this.selected && this.path.length > 0) {
-                    ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
+                    ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)'; ctx.lineWidth = 2; ctx.beginPath();
                     ctx.moveTo(this.x, this.y);
                     this.path.forEach(p => ctx.lineTo(p.x, p.y));
                     if (this.currentTarget) ctx.lineTo(this.currentTarget.x, this.currentTarget.y);
@@ -433,8 +433,7 @@
                         ctx.fillRect(-18, -12, 2, 6); ctx.fillRect(-18, 6, 2, 6); ctx.shadowBlur = 0;
                     }
                     ctx.fillStyle = '#080808'; ctx.fillRect(-18, -16, 36, 4); ctx.fillRect(-18, 12, 36, 4);
-                    ctx.fillStyle = '#333';
-                    for (let i = -16; i < 16; i += 4) { ctx.fillRect(i, -16, 1, 4); ctx.fillRect(i, 12, 1, 4); }
+                    ctx.fillStyle = '#333'; for (let i = -16; i < 16; i += 4) { ctx.fillRect(i, -16, 1, 4); ctx.fillRect(i, 12, 1, 4); }
                     ctx.fillStyle = '#997700'; ctx.beginPath(); ctx.arc(-2, 0, 11, 0, Math.PI * 2); ctx.fill();
                     ctx.strokeStyle = '#886600'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(26, 0); ctx.stroke();
                 } else {
@@ -446,7 +445,6 @@
             }
 
             setPath(path, finalX, finalY) {
-                // Add scatter to final destination only
                 const spread = 40;
                 this.currentTarget = {
                     x: finalX + (Math.random() * spread - spread / 2),
@@ -478,9 +476,7 @@
         class World {
             constructor() {
                 this.grid = new Grid(WORLD_W, WORLD_H, GRID_SIZE);
-                this.units = [];
-                this.obstacles = [];
-                this.particles = [];
+                this.units = []; this.obstacles = []; this.particles = [];
                 this.generateMap();
             }
 
@@ -493,20 +489,18 @@
                         this.addObstacle(new Obstacle(tx, ty, 15 + Math.random() * 15, 'tree'));
                     }
                 }
-                // Rocks & Buildings
+                // Rocks
                 for (let i = 0; i < 30; i++) this.addObstacle(new Obstacle(Math.random() * WORLD_W, Math.random() * WORLD_H, 30 + Math.random() * 30, 'rock'));
+                // Lakes
+                for (let i = 0; i < 8; i++) this.addObstacle(new Obstacle(Math.random() * WORLD_W, Math.random() * WORLD_H, 80 + Math.random() * 60, 'lake'));
+                // Buildings
                 for (let i = 0; i < 15; i++) this.addObstacle(new Obstacle(Math.random() * WORLD_W, Math.random() * WORLD_H, 60 + Math.random() * 20, 'building'));
 
-                // Clear spawn
                 this.obstacles = this.obstacles.filter(o => dist(o.x, o.y, 1000, 1000) > 300);
-
-                // Re-build grid based on final obstacles
                 this.obstacles.forEach(o => this.grid.markObstacle(o.x, o.y, o.radius));
             }
 
-            addObstacle(obs) {
-                this.obstacles.push(obs);
-            }
+            addObstacle(obs) { this.obstacles.push(obs); }
 
             resolveCollisions() {
                 for (let i = 0; i < this.units.length; i++) {
@@ -540,9 +534,21 @@
             }
 
             trySpawn(type) {
-                const rx = camera.x + canvas.width / 2 + (Math.random() * 200 - 100);
-                const ry = camera.y + canvas.height / 2 + (Math.random() * 200 - 100);
-                this.units.push(new Unit(rx, ry, type));
+                // BUG FIX: Retry loop to prevent spawning on obstacles
+                const range = 200;
+                let bestX = 0, bestY = 0, found = false;
+
+                for (let i = 0; i < 20; i++) {
+                    const rx = camera.x + canvas.width / 2 + (Math.random() * range - range / 2);
+                    const ry = camera.y + canvas.height / 2 + (Math.random() * range - range / 2);
+
+                    // Check if this spot is blocked by grid
+                    if (!this.grid.isBlocked(rx, ry)) {
+                        bestX = rx; bestY = ry; found = true; break;
+                    }
+                }
+                if (found) this.units.push(new Unit(bestX, bestY, type));
+                else console.log("Spawn failed - location blocked");
             }
 
             update() {
@@ -555,17 +561,6 @@
             }
 
             draw() {
-                // Grid Debug (Blocked cells)
-                // Comment this block out if you don't want to see the red squares
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
-                for (let y = Math.floor(camera.y / GRID_SIZE); y < (camera.y + canvas.height) / GRID_SIZE; y++) {
-                    for (let x = Math.floor(camera.x / GRID_SIZE); x < (camera.x + canvas.width) / GRID_SIZE; x++) {
-                        if (this.grid.grid[y] && this.grid.grid[y][x] === 1) {
-                            ctx.fillRect(x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
-                        }
-                    }
-                }
-
                 ctx.strokeStyle = '#35454d'; ctx.lineWidth = 1; ctx.beginPath();
                 const startX = Math.floor(camera.x / 100) * 100;
                 const startY = Math.floor(camera.y / 100) * 100;
@@ -586,11 +581,13 @@
             updateRadar() {
                 radar.innerHTML = '';
                 const sx = 250 / WORLD_W; const sy = 200 / WORLD_H;
+
                 const vDiv = document.createElement('div');
-                vDiv.style.position = 'absolute'; vDiv.style.border = '1px solid white';
+                vDiv.className = 'radar-view';
                 vDiv.style.left = (camera.x * sx) + 'px'; vDiv.style.top = (camera.y * sy) + 'px';
                 vDiv.style.width = (canvas.width * sx) + 'px'; vDiv.style.height = (canvas.height * sy) + 'px';
                 radar.appendChild(vDiv);
+
                 this.units.forEach(u => {
                     const d = document.createElement('div'); d.className = 'radar-dot';
                     if (u.type === 'tank') d.style.background = 'gold';
@@ -606,6 +603,15 @@
         let mouseScreenX = 0, mouseScreenY = 0;
         let isDragging = false;
         let startWorldX, startWorldY;
+
+        radar.addEventListener('mousedown', e => {
+            const rect = radar.getBoundingClientRect();
+            const cx = e.clientX - rect.left;
+            const cy = e.clientY - rect.top;
+            camera.x = ((cx / 250) * WORLD_W) - canvas.width / 2;
+            camera.y = ((cy / 200) * WORLD_H) - canvas.height / 2;
+            camera.velX = 0; camera.velY = 0; camera.target = null;
+        });
 
         window.addEventListener('mousemove', e => {
             const rect = canvas.getBoundingClientRect();
@@ -648,11 +654,8 @@
             const worldX = mouseScreenX + camera.x;
             const worldY = mouseScreenY + camera.y;
             world.particles.push(new MoveMarker(worldX, worldY));
-
-            // Calculate Path for Selected Units
             world.units.forEach(u => {
                 if (u.selected) {
-                    // Calculate path on grid
                     const path = world.grid.findPath(u.x, u.y, worldX, worldY);
                     u.setPath(path, worldX, worldY);
                 }
