@@ -58,9 +58,9 @@
         // ==================================================================================
         const CONFIG = {
             GAME: {
-                SPEED: 0.007,             // Movement speed of the snake
-                START_LENGTH: 15,         // Number of segments at start
-                SEGMENT_DIST: 0.04,       // Distance between snake segments
+                SPEED: 0.008,             // Movement speed of the snake
+                START_LENGTH: 7,         // Number of segments at start
+                SEGMENT_DIST: 0.05,       // Distance between snake segments
                 TURN_SENSITIVITY: 30,     // Minimum swipe distance (pixels) to register a turn
                 MAX_SNAKE_RENDER: 60,     // Hard limit on segments rendered (Shader optimization)
             },
@@ -80,8 +80,8 @@
             },
 
             SNAKE_VISUALS: {
-                RADIUS: 0.035,            // Thickness of the snake
-                COLOR_BODY_1: [0.1, 0.6, 0.2], // Dark Green skin tone
+                RADIUS: 0.025,            // Thickness of the snake
+                COLOR_BODY_1: [0.3, 0.8, 0.1], // Dark Green skin tone
                 COLOR_BODY_2: [0.3, 0.8, 0.1], // Light Green skin tone
                 COLOR_EYES: [1.0, 1.0, 0.0], // Yellow eyes
                 SKIN_PATTERN_FREQ: 50.0,  // Density of the skin texture
@@ -97,18 +97,18 @@
             // THE WAKE & RIPPLE PHYSICS
             WAKE: {
                 // 1. Head "Bow Wave" (The continuous push in front of head)
-                HEAD_PRESSURE_SIZE: 0.12,    // How wide the pressure wave is at the head
-                HEAD_PRESSURE_HEIGHT: 0.08,  // How high the water rises at the head
-                HEAD_WAVE_FREQ: 25.0,        // Frequency of the ripples at the nose
+                HEAD_PRESSURE_SIZE: 0.002,    // How wide the pressure wave is at the head
+                HEAD_PRESSURE_HEIGHT: 0.005,  // How high the water rises at the head
+                HEAD_WAVE_FREQ: 0.0,        // Frequency of the ripples at the nose
 
                 // 2. Trail Ripples (The ones left behind)
                 TRAIL_DROP_INTERVAL: 12,     // Drop a ripple every X frames (Lower = smoother trail, Higher = gap in trail)
-                TRAIL_LIFESPAN: 2.5,         // How many seconds a ripple lasts before disappearing
-                TRAIL_MAX_COUNT: 16,         // Max ripples allowed at once (Keep < 20 for mobile performance!)
+                TRAIL_LIFESPAN: 1,         // How many seconds a ripple lasts before disappearing
+                TRAIL_MAX_COUNT: 8,         // Max ripples allowed at once (Keep < 20 for mobile performance!)
 
-                RIPPLE_SPEED: 30.0,          // How fast rings expand outward
-                RIPPLE_HEIGHT: 0.12,         // How deep/high the ripples are
-                RIPPLE_WIDTH: 0.15,          // Thickness of the ripple ring
+                RIPPLE_SPEED: 50.0,          // How fast rings expand outward
+                RIPPLE_HEIGHT: 0.012,         // How deep/high the ripples are
+                RIPPLE_WIDTH: 0.015,          // Thickness of the ripple ring
             }
         };
 
