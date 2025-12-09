@@ -4,12 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Hydro Snake Mobile Optimized</title>
+    <title>Hydro Snake - Configurable</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #001;
+            background-color: #000;
         }
 
         canvas {
@@ -17,25 +17,24 @@
             width: 100vw;
             height: 100vh;
             touch-action: none;
-            /* Prevents scrolling */
         }
 
         #ui {
             position: absolute;
             top: 20px;
             left: 20px;
-            color: rgba(200, 240, 255, 0.9);
+            color: rgba(255, 255, 255, 0.9);
             font-family: 'Segoe UI', sans-serif;
-            text-shadow: 0 2px 5px rgba(0, 0, 0, 1.0);
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
             pointer-events: none;
-            z-index: 10;
             user-select: none;
+            z-index: 10;
         }
 
         h1 {
             margin: 0;
-            font-size: 28px;
-            letter-spacing: 2px;
+            font-size: 24px;
+            letter-spacing: 1px;
         }
 
         p {
@@ -49,222 +48,272 @@
 <body>
     <div id="ui">
         <h1 id="score">Score: 0</h1>
-        <p>Swipe to swim</p>
+        <p>Edit the CONFIG object in the source code to tweak physics!</p>
     </div>
     <canvas id="glcanvas"></canvas>
 
-    <!-- VERTEX SHADER -->
-    <script id="vs" type="x-shader/x-vertex">
-        attribute vec2 position;
-        void main() {
-            gl_Position = vec4(position, 0.0, 1.0);
-        }
-    </script>
-
-    <!-- FRAGMENT SHADER -->
-    <script id="fs" type="x-shader/x-fragment">
-        precision mediump float; // Use medium precision for mobile performance
-
-        uniform vec2 u_resolution;
-        uniform float u_time;
-        
-        #define MAX_SNAKE 60
-        uniform vec2 u_snake[MAX_SNAKE];
-        uniform int u_snakeLen;
-        
-        uniform vec3 u_apple;
-        uniform float u_appleSplash;
-
-        // --- MATH HELPERS ---
-        vec2 hash( vec2 p ) {
-            p = vec2( dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3)) );
-            return -1.0 + 2.0*fract(sin(p)*43758.5453123);
-        }
-
-        float noise( in vec2 p ) {
-            const float K1 = 0.366025404; 
-            const float K2 = 0.211324865; 
-            vec2 i = floor( p + (p.x+p.y)*K1 );
-            vec2 a = p - i + (i.x+i.y)*K2;
-            float m = step(a.y,a.x); 
-            vec2 o = vec2(m,1.0-m);
-            vec2 b = a - o + K2;
-            vec2 c = a - 1.0 + 2.0*K2;
-            vec3 h = max( 0.5-vec3(dot(a,a), dot(b,b), dot(c,c) ), 0.0 );
-            vec3 n = h*h*h*h*vec3( dot(a,hash(i+0.0)), dot(b,hash(i+o)), dot(c,hash(i+1.0)));
-            return dot( n, vec3(70.0) );
-        }
-
-        float sdSegment( in vec2 p, in vec2 a, in vec2 b ) {
-            vec2 pa = p-a, ba = b-a;
-            float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
-            return length( pa - ba*h );
-        }
-
-        // --- OPTIMIZED PHYSICS & HEIGHT MAP ---
-        float getHeight(vec2 p) {
-            float height = 0.0;
-            float t = u_time * 1.5;
-
-            // 1. Ambient Ocean Noise (Reduced complexity)
-            // Using slightly larger scales to reduce visual noise
-            height += noise(p * 3.0 + vec2(t*0.2, t*0.1)) * 0.04;
-            height += noise(p * 7.0 - vec2(t*0.1, 0.0)) * 0.02;
-
-            // 2. Snake Interaction (OPTIMIZED)
-            // Instead of checking the whole body, we only check the HEAD for the wake.
-            // This saves ~60 iterations per pixel call.
-            float dHead = length(p - u_snake[0]);
-            
-            // "Bow Wave" at the head
-            float headWake = smoothstep(0.15, 0.0, dHead);
-            height += headWake * 0.1 * sin(dHead * 20.0 - u_time * 10.0);
-
-            // 3. Apple Splash Interaction
-            if (u_appleSplash > 0.0) {
-                float dApple = length(p - u_apple.xy);
-                float wave = sin(dApple * 30.0 - u_appleSplash * 20.0);
-                float expandRadius = u_appleSplash * 1.0; 
-                float mask = exp(-pow(dApple - expandRadius, 2.0) / 0.02);
-                float dampen = smoothstep(2.0, 0.0, u_appleSplash);
-                height += wave * mask * 0.15 * dampen;
-            }
-
-            return height;
-        }
-
-        void main() {
-            vec2 uv = gl_FragCoord.xy / u_resolution.xy;
-            // Aspect corrected coordinates
-            vec2 p = (2.0*gl_FragCoord.xy - u_resolution.xy) / u_resolution.y;
-
-            // --- NORMALS ---
-            // We calculate height 3 times to get the slope (normal)
-            float e = 0.005; // Slightly coarser epsilon for smoother look
-            float h = getHeight(p);
-            float hx = getHeight(p + vec2(e, 0.0));
-            float hy = getHeight(p + vec2(0.0, e));
-            vec3 normal = normalize(vec3(h - hx, h - hy, e * 2.0));
-
-            // --- LIGHTING ---
-            vec3 lightDir = normalize(vec3(-0.5, 0.5, 0.8));
-            vec3 viewDir = vec3(0.0, 0.0, 1.0);
-            
-            vec3 halfDir = normalize(lightDir + viewDir);
-            float specAngle = max(dot(normal, halfDir), 0.0);
-            float specular = pow(specAngle, 80.0); 
-            
-            // Refraction
-            vec2 distortedUV = uv + normal.xy * 0.03;
-            
-            // Water Color
-            vec3 deepCol = vec3(0.0, 0.05, 0.2);
-            vec3 shallowCol = vec3(0.0, 0.4, 0.6);
-            
-            // Simpler noise for color mixing to save performance
-            float noiseVal = noise(distortedUV * 3.0 + u_time * 0.1);
-            vec3 waterCol = mix(deepCol, shallowCol, noiseVal + h * 1.5);
-
-            // --- DRAW OBJECTS ---
-            // Refract coordinate
-            vec2 pDis = p + normal.xy * 0.02; 
-
-            vec3 objectCol = vec3(0.0);
-            float objectMask = 0.0;
-
-            // 1. Apple
-            vec2 applePos = u_apple.xy;
-            float appleH = u_apple.z;
-            float scale = 1.0 + appleH * 0.5;
-            
-            // Determine if we use refracted or real coordinates based on apple height
-            vec2 checkPos = (appleH > 0.01) ? p : pDis;
-            float rad = (appleH > 0.01) ? 0.035 * scale : 0.035;
-
-            float dApple = length(checkPos - applePos) - rad;
-
-            if (dApple < 0.0) {
-                vec3 appleColor = vec3(0.9, 0.1, 0.1);
-                float appleLight = dot(normalize(vec3(checkPos-applePos, 0.5)), lightDir);
-                objectCol = appleColor * (0.6 + 0.4*appleLight);
-                objectMask = 1.0;
-            }
-
-            // 2. Snake Body
-            // We must loop here to draw the shape, but this is only done ONCE per pixel,
-            // unlike getHeight which is called 3 times per pixel.
-            float dSnake = 100.0;
-            
-            // Bounding box optimization: 
-            // Only check snake if pixel is roughly near the center or we know where the snake is.
-            // (Skipped for code simplicity, but pure iteration is fast enough for <60 items once)
-            for (int i = 0; i < MAX_SNAKE; i++) {
-                if (i >= u_snakeLen - 1) break;
-                float seg = sdSegment(pDis, u_snake[i], u_snake[i+1]);
-                dSnake = min(dSnake, seg);
-            }
-            
-            if (dSnake < 0.035) {
-                float pat = 0.5 + 0.5 * sin(pDis.x * 50.0 + pDis.y * 50.0);
-                vec3 skinCol = mix(vec3(0.1, 0.6, 0.2), vec3(0.3, 0.8, 0.1), pat);
-                
-                // Eyes (Head is index 0)
-                if (length(pDis - u_snake[0]) < 0.035) {
-                     vec2 dir = normalize(u_snake[0] - u_snake[1]);
-                     vec2 side = vec2(-dir.y, dir.x);
-                     vec2 eyeL = u_snake[0] + side * 0.015 - dir * 0.01;
-                     vec2 eyeR = u_snake[0] - side * 0.015 - dir * 0.01;
-                     if (length(pDis - eyeL) < 0.008 || length(pDis - eyeR) < 0.008) {
-                         skinCol = vec3(1.0, 1.0, 0.0);
-                     }
-                }
-                objectCol = skinCol;
-                objectMask = 1.0;
-            }
-            
-            // --- COMPOSITE ---
-            vec3 finalColor = waterCol;
-            if (objectMask > 0.0) {
-                float fog = 0.2; 
-                if (u_apple.z > 0.0 && dApple < 0.0) fog = 0.0;
-                finalColor = mix(objectCol, waterCol, fog);
-            }
-
-            finalColor += vec3(1.0) * specular * 0.8;
-            
-            // Simplified Caustics
-            // Only calculate caustics near center or if performance allows. 
-            // We keep it simple here.
-            float caustics = smoothstep(0.7, 1.0, noise(p*8.0 + u_time + normal.xy));
-            finalColor += caustics * 0.05 * vec3(0.8, 0.9, 1.0);
-
-            // Shadow
-            if (u_apple.z > 0.1) {
-                float dShadow = length(pDis - (u_apple.xy + vec2(0.05, -0.05))) - 0.02;
-                if (dShadow < 0.0) finalColor *= 0.6;
-            }
-
-            gl_FragColor = vec4(finalColor, 1.0);
-        }
-    </script>
-
     <script>
+        // ==================================================================================
+        //  ⚙️ CONFIGURATION - PLAY WITH THESE VALUES ⚙️
+        // ==================================================================================
+        const CONFIG = {
+            GAME: {
+                SPEED: 0.007,             // Movement speed of the snake
+                START_LENGTH: 15,         // Number of segments at start
+                SEGMENT_DIST: 0.04,       // Distance between snake segments
+                TURN_SENSITIVITY: 30,     // Minimum swipe distance (pixels) to register a turn
+                MAX_SNAKE_RENDER: 60,     // Hard limit on segments rendered (Shader optimization)
+            },
+
+            WATER: {
+                COLOR_DEEP: [0.0, 0.05, 0.2],   // RGB (0.0 to 1.0) - The dark part of water
+                COLOR_SHALLOW: [0.0, 0.4, 0.6],    // RGB (0.0 to 1.0) - The light part of water
+
+                WAVE_SPEED: 1.5,          // How fast the background waves move
+                WAVE_HEIGHT_1: 0.04,      // Height of the large background waves
+                WAVE_HEIGHT_2: 0.015,     // Height of the small detail waves
+                NOISE_SCALE: 3.0,         // Zoom level of the water texture
+
+                SPECULAR_POWER: 80.0,     // Shininess of the water (Higher = smaller, sharper highlights)
+                SPECULAR_INTENSITY: 0.8,  // Brightness of the sun reflection
+                REFRACTION_STR: 0.03,     // How much objects distort underwater
+            },
+
+            SNAKE_VISUALS: {
+                RADIUS: 0.035,            // Thickness of the snake
+                COLOR_BODY_1: [0.1, 0.6, 0.2], // Dark Green skin tone
+                COLOR_BODY_2: [0.3, 0.8, 0.1], // Light Green skin tone
+                COLOR_EYES: [1.0, 1.0, 0.0], // Yellow eyes
+                SKIN_PATTERN_FREQ: 50.0,  // Density of the skin texture
+            },
+
+            APPLE: {
+                RADIUS: 0.035,            // Size of the apple
+                COLOR: [0.9, 0.1, 0.1],   // Red apple
+                FALL_SPEED: 0.05,         // How fast it drops from sky
+                START_HEIGHT: 2.0,        // Height it drops from
+            },
+
+            // THE WAKE & RIPPLE PHYSICS
+            WAKE: {
+                // 1. Head "Bow Wave" (The continuous push in front of head)
+                HEAD_PRESSURE_SIZE: 0.12,    // How wide the pressure wave is at the head
+                HEAD_PRESSURE_HEIGHT: 0.08,  // How high the water rises at the head
+                HEAD_WAVE_FREQ: 25.0,        // Frequency of the ripples at the nose
+
+                // 2. Trail Ripples (The ones left behind)
+                TRAIL_DROP_INTERVAL: 12,     // Drop a ripple every X frames (Lower = smoother trail, Higher = gap in trail)
+                TRAIL_LIFESPAN: 2.5,         // How many seconds a ripple lasts before disappearing
+                TRAIL_MAX_COUNT: 16,         // Max ripples allowed at once (Keep < 20 for mobile performance!)
+
+                RIPPLE_SPEED: 30.0,          // How fast rings expand outward
+                RIPPLE_HEIGHT: 0.12,         // How deep/high the ripples are
+                RIPPLE_WIDTH: 0.15,          // Thickness of the ripple ring
+            }
+        };
+
+        // ==================================================================================
+        //  SHADER GENERATORS (Injects Config into GLSL)
+        // ==================================================================================
+
+        // Helper: Converts JS number to GLSL float string (e.g. 1 -> "1.0") to prevent crash
+        const glFloat = (n) => Number.isInteger(n) ? n.toFixed(1) : n.toString();
+        const glVec3 = (arr) => `vec3(${glFloat(arr[0])}, ${glFloat(arr[1])}, ${glFloat(arr[2])})`;
+
+        const VERTEX_SOURCE = `
+            attribute vec2 position;
+            void main() { gl_Position = vec4(position, 0.0, 1.0); }
+        `;
+
+        const FRAGMENT_SOURCE = `
+            precision mediump float;
+
+            uniform vec2 u_resolution;
+            uniform float u_time;
+            
+            // Snake Data
+            #define MAX_SNAKE ${CONFIG.GAME.MAX_SNAKE_RENDER}
+            uniform vec2 u_snake[MAX_SNAKE];
+            uniform int u_snakeLen;
+            
+            // Apple Data
+            uniform vec3 u_apple;
+            uniform float u_appleSplash;
+
+            // Ripple Trail Data
+            #define MAX_RIPPLES ${CONFIG.WAKE.TRAIL_MAX_COUNT}
+            uniform vec3 u_ripples[MAX_RIPPLES]; // x, y, time_alive
+            uniform int u_rippleCount;
+
+            // --- NOISE ---
+            vec2 hash( vec2 p ) {
+                p = vec2( dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3)) );
+                return -1.0 + 2.0*fract(sin(p)*43758.5453123);
+            }
+
+            float noise( in vec2 p ) {
+                const float K1 = 0.366025404; const float K2 = 0.211324865; 
+                vec2 i = floor( p + (p.x+p.y)*K1 );
+                vec2 a = p - i + (i.x+i.y)*K2;
+                float m = step(a.y,a.x); vec2 o = vec2(m,1.0-m);
+                vec2 b = a - o + K2; vec2 c = a - 1.0 + 2.0*K2;
+                vec3 h = max( 0.5-vec3(dot(a,a), dot(b,b), dot(c,c) ), 0.0 );
+                vec3 n = h*h*h*h*vec3( dot(a,hash(i+0.0)), dot(b,hash(i+o)), dot(c,hash(i+1.0)));
+                return dot( n, vec3(70.0) );
+            }
+
+            float sdSegment( in vec2 p, in vec2 a, in vec2 b ) {
+                vec2 pa = p-a, ba = b-a;
+                float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
+                return length( pa - ba*h );
+            }
+
+            // --- DYNAMIC HEIGHT MAP ---
+            float getHeight(vec2 p) {
+                float height = 0.0;
+                float t = u_time * ${glFloat(CONFIG.WATER.WAVE_SPEED)};
+
+                // 1. Background Waves
+                height += noise(p * ${glFloat(CONFIG.WATER.NOISE_SCALE)} + vec2(t*0.2, t*0.1)) * ${glFloat(CONFIG.WATER.WAVE_HEIGHT_1)};
+                height += noise(p * ${glFloat(CONFIG.WATER.NOISE_SCALE * 2.0)} - vec2(t*0.1, 0.0)) * ${glFloat(CONFIG.WATER.WAVE_HEIGHT_2)};
+
+                // 2. Head Bow Wave (Immediate displacement)
+                float dHead = length(p - u_snake[0]);
+                float headWake = smoothstep(${glFloat(CONFIG.WAKE.HEAD_PRESSURE_SIZE)}, 0.0, dHead);
+                height += headWake * ${glFloat(CONFIG.WAKE.HEAD_PRESSURE_HEIGHT)} * sin(dHead * ${glFloat(CONFIG.WAKE.HEAD_WAVE_FREQ)} - u_time * 15.0);
+
+                // 3. Trail Ripples
+                for(int i=0; i<MAX_RIPPLES; i++){
+                    if(i >= u_rippleCount) break;
+                    vec3 r = u_ripples[i];
+                    float d = length(p - r.xy);
+                    
+                    // Wave Physics
+                    float wave = sin(d * ${glFloat(CONFIG.WAKE.RIPPLE_SPEED)} - r.z * ${glFloat(CONFIG.WAKE.RIPPLE_SPEED * 0.5)});
+                    
+                    // Expanding Ring Mask
+                    float radius = r.z * 0.5 + 0.05; 
+                    float mask = exp(-pow(d - radius, 2.0) / (${glFloat(CONFIG.WAKE.RIPPLE_WIDTH * 0.1)} + r.z*0.01));
+
+                    // Fade out
+                    float alpha = smoothstep(${glFloat(CONFIG.WAKE.TRAIL_LIFESPAN)}, 0.0, r.z);
+
+                    height += wave * mask * ${glFloat(CONFIG.WAKE.RIPPLE_HEIGHT)} * alpha;
+                }
+
+                // 4. Apple Splash (Reuse ripple constants for consistency)
+                if (u_appleSplash > 0.0) {
+                    float dApple = length(p - u_apple.xy);
+                    float wave = sin(dApple * ${glFloat(CONFIG.WAKE.RIPPLE_SPEED)} - u_appleSplash * 20.0);
+                    float expandRadius = u_appleSplash * 1.0; 
+                    float mask = exp(-pow(dApple - expandRadius, 2.0) / 0.02);
+                    float dampen = smoothstep(2.0, 0.0, u_appleSplash);
+                    height += wave * mask * 0.15 * dampen;
+                }
+
+                return height;
+            }
+
+            void main() {
+                vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+                vec2 p = (2.0*gl_FragCoord.xy - u_resolution.xy) / u_resolution.y;
+
+                // Normals
+                float e = 0.005;
+                float h = getHeight(p);
+                float hx = getHeight(p + vec2(e, 0.0));
+                float hy = getHeight(p + vec2(0.0, e));
+                vec3 normal = normalize(vec3(h - hx, h - hy, e * 2.0));
+
+                // Lighting
+                vec3 lightDir = normalize(vec3(-0.5, 0.5, 0.8));
+                vec3 viewDir = vec3(0.0, 0.0, 1.0);
+                vec3 halfDir = normalize(lightDir + viewDir);
+                float specular = pow(max(dot(normal, halfDir), 0.0), ${glFloat(CONFIG.WATER.SPECULAR_POWER)}); 
+                
+                // Color & Refraction
+                vec2 distortedUV = uv + normal.xy * ${glFloat(CONFIG.WATER.REFRACTION_STR)};
+                float noiseVal = noise(distortedUV * 3.0 + u_time * 0.1);
+                
+                vec3 waterCol = mix(${glVec3(CONFIG.WATER.COLOR_DEEP)}, ${glVec3(CONFIG.WATER.COLOR_SHALLOW)}, noiseVal + h * 1.5);
+
+                // Draw Objects
+                vec2 pDis = p + normal.xy * 0.02; 
+                vec3 objectCol = vec3(0.0);
+                float objectMask = 0.0;
+
+                // Apple
+                vec2 applePos = u_apple.xy;
+                float scale = 1.0 + u_apple.z * 0.5;
+                vec2 checkPos = (u_apple.z > 0.01) ? p : pDis;
+                float rad = (u_apple.z > 0.01) ? ${glFloat(CONFIG.APPLE.RADIUS)} * scale : ${glFloat(CONFIG.APPLE.RADIUS)};
+                
+                float dApple = length(checkPos - applePos) - rad;
+                if (dApple < 0.0) {
+                    float appleLight = dot(normalize(vec3(checkPos-applePos, 0.5)), lightDir);
+                    objectCol = ${glVec3(CONFIG.APPLE.COLOR)} * (0.6 + 0.4*appleLight);
+                    objectMask = 1.0;
+                }
+
+                // Snake
+                float dSnake = 100.0;
+                for (int i = 0; i < MAX_SNAKE; i++) {
+                    if (i >= u_snakeLen - 1) break;
+                    float seg = sdSegment(pDis, u_snake[i], u_snake[i+1]);
+                    dSnake = min(dSnake, seg);
+                }
+                
+                if (dSnake < ${glFloat(CONFIG.SNAKE_VISUALS.RADIUS)}) {
+                    float pat = 0.5 + 0.5 * sin(pDis.x * ${glFloat(CONFIG.SNAKE_VISUALS.SKIN_PATTERN_FREQ)} + pDis.y * ${glFloat(CONFIG.SNAKE_VISUALS.SKIN_PATTERN_FREQ)});
+                    vec3 skinCol = mix(${glVec3(CONFIG.SNAKE_VISUALS.COLOR_BODY_1)}, ${glVec3(CONFIG.SNAKE_VISUALS.COLOR_BODY_2)}, pat);
+                    
+                    // Eyes
+                    if (length(pDis - u_snake[0]) < ${glFloat(CONFIG.SNAKE_VISUALS.RADIUS)}) {
+                        vec2 dir = normalize(u_snake[0] - u_snake[1]);
+                        vec2 side = vec2(-dir.y, dir.x);
+                        float eyeOffset = ${glFloat(CONFIG.SNAKE_VISUALS.RADIUS * 0.4)};
+                        if (length(pDis - (u_snake[0] + side * eyeOffset - dir * 0.01)) < 0.008 || 
+                            length(pDis - (u_snake[0] - side * eyeOffset - dir * 0.01)) < 0.008) {
+                            skinCol = ${glVec3(CONFIG.SNAKE_VISUALS.COLOR_EYES)};
+                        }
+                    }
+                    objectCol = skinCol;
+                    objectMask = 1.0;
+                }
+                
+                // Composite
+                vec3 finalColor = waterCol;
+                if (objectMask > 0.0) {
+                    float fog = (u_apple.z > 0.0 && dApple < 0.0) ? 0.0 : 0.2;
+                    finalColor = mix(objectCol, waterCol, fog);
+                }
+
+                finalColor += vec3(1.0) * specular * ${glFloat(CONFIG.WATER.SPECULAR_INTENSITY)};
+                float caustics = smoothstep(0.7, 1.0, noise(p*8.0 + u_time + normal.xy));
+                finalColor += caustics * 0.05 * vec3(0.8, 0.9, 1.0);
+
+                // Shadow
+                if (u_apple.z > 0.1) {
+                    if (length(pDis - (u_apple.xy + vec2(0.05, -0.05))) - ${glFloat(CONFIG.APPLE.RADIUS * 0.6)} < 0.0) finalColor *= 0.6;
+                }
+
+                gl_FragColor = vec4(finalColor, 1.0);
+            }
+        `;
+
+        // ==================================================================================
+        //  ENGINE
+        // ==================================================================================
         const canvas = document.getElementById('glcanvas');
-        const gl = canvas.getContext('webgl', { alpha: false, depth: false }); // Optimization hints
+        const gl = canvas.getContext('webgl', { alpha: false, depth: false });
         const uiScore = document.getElementById('score');
 
-        // OPTIMIZATION: Handle resolution
-        // Mobile screens have high DPR (2x, 3x). Rendering full resolution kills performance.
-        // We cap DPR to 1.0 or 1.5 max for performance.
         function resize() {
-            // Force lower resolution on high-DPI screens
             const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-            const displayWidth = Math.floor(window.innerWidth * dpr);
-            const displayHeight = Math.floor(window.innerHeight * dpr);
-
-            if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-                canvas.width = displayWidth;
-                canvas.height = displayHeight;
+            const w = Math.floor(window.innerWidth * dpr);
+            const h = Math.floor(window.innerHeight * dpr);
+            if (canvas.width !== w || canvas.height !== h) {
+                canvas.width = w; canvas.height = h;
             }
             gl.viewport(0, 0, canvas.width, canvas.height);
         }
@@ -276,15 +325,14 @@
             gl.shaderSource(shader, source);
             gl.compileShader(shader);
             if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                console.error(gl.getShaderInfoLog(shader));
-                return null;
+                console.error("Shader Compile Error:", gl.getShaderInfoLog(shader));
             }
             return shader;
         }
 
         const program = gl.createProgram();
-        gl.attachShader(program, createShader(gl, gl.VERTEX_SHADER, document.getElementById('vs').text));
-        gl.attachShader(program, createShader(gl, gl.FRAGMENT_SHADER, document.getElementById('fs').text));
+        gl.attachShader(program, createShader(gl, gl.VERTEX_SHADER, VERTEX_SOURCE));
+        gl.attachShader(program, createShader(gl, gl.FRAGMENT_SHADER, FRAGMENT_SOURCE));
         gl.linkProgram(program);
         gl.useProgram(program);
 
@@ -300,28 +348,29 @@
             snake: gl.getUniformLocation(program, "u_snake"),
             snakeLen: gl.getUniformLocation(program, "u_snakeLen"),
             apple: gl.getUniformLocation(program, "u_apple"),
-            appleSplash: gl.getUniformLocation(program, "u_appleSplash")
+            appleSplash: gl.getUniformLocation(program, "u_appleSplash"),
+            ripples: gl.getUniformLocation(program, "u_ripples"),
+            rippleCount: gl.getUniformLocation(program, "u_rippleCount")
         };
 
+        // --- GAME VARIABLES ---
         let snake = [];
-        for (let i = 0; i < 15; i++) snake.push({ x: 0, y: -i * 0.04 });
+        for (let i = 0; i < CONFIG.GAME.START_LENGTH; i++) snake.push({ x: 0, y: -i * CONFIG.GAME.SEGMENT_DIST });
         let dir = { x: 0, y: 1 };
         let inputQ = [];
         let score = 0;
-        let speed = 0.007;
 
-        let apple = { x: 0, y: 0.5, z: 2.0, falling: true };
+        let apple = { x: 0, y: 0.5, z: CONFIG.APPLE.START_HEIGHT, falling: true };
         let splashTimer = 0.0;
 
-        // Prevent time from getting too large (Micro-waves fix)
-        let totalTime = 0;
+        let ripples = [];
+        let rippleDropTimer = 0;
 
         function spawnApple() {
-            // Need to account for aspect ratio in game logic
             const aspect = canvas.width / canvas.height;
             apple.x = (Math.random() * 2 - 1) * aspect * 0.8;
             apple.y = (Math.random() * 2 - 1) * 0.8;
-            apple.z = 2.0;
+            apple.z = CONFIG.APPLE.START_HEIGHT;
             apple.falling = true;
             splashTimer = 0.0;
         }
@@ -340,119 +389,107 @@
             if (e.key === "ArrowRight") handleInput({ x: 1, y: 0 });
         });
 
-        // Touch Logic
-        let touchStartX = 0;
-        let touchStartY = 0;
-        canvas.addEventListener('touchstart', e => {
-            touchStartX = e.changedTouches[0].screenX;
-            touchStartY = e.changedTouches[0].screenY;
-        }, { passive: false });
-
+        // Touch
+        let tx = 0, ty = 0;
+        canvas.addEventListener('touchstart', e => { tx = e.changedTouches[0].screenX; ty = e.changedTouches[0].screenY; }, { passive: false });
         canvas.addEventListener('touchend', e => {
-            let touchEndX = e.changedTouches[0].screenX;
-            let touchEndY = e.changedTouches[0].screenY;
-
-            let dx = touchEndX - touchStartX;
-            let dy = touchEndY - touchStartY;
-
-            if (Math.max(Math.abs(dx), Math.abs(dy)) < 30) return;
-
-            if (Math.abs(dx) > Math.abs(dy)) {
-                if (dx > 0) handleInput({ x: 1, y: 0 });
-                else handleInput({ x: -1, y: 0 });
-            } else {
-                if (dy > 0) handleInput({ x: 0, y: -1 });
-                else handleInput({ x: 0, y: 1 });
+            let dx = e.changedTouches[0].screenX - tx;
+            let dy = e.changedTouches[0].screenY - ty;
+            if (Math.max(Math.abs(dx), Math.abs(dy)) > CONFIG.GAME.TURN_SENSITIVITY) {
+                if (Math.abs(dx) > Math.abs(dy)) handleInput(dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 });
+                else handleInput(dy > 0 ? { x: 0, y: -1 } : { x: 0, y: 1 });
             }
         }, { passive: false });
 
         function loop(now) {
-            // Precision Fix: Keep time roughly periodic or small
-            // We use 'now' from requestAnimationFrame, but send a modulo'd time to shader
-            // to prevent float precision artifacts ("micro waves")
-            totalTime = now * 0.001;
-            // 10000 is enough for no visible seam, small enough for mediump precision
+            let totalTime = now * 0.001;
             let shaderTime = totalTime % 10000.0;
 
             if (inputQ.length) dir = inputQ.shift();
 
-            let head = { x: snake[0].x + dir.x * speed, y: snake[0].y + dir.y * speed };
-
+            // Move Head
+            let head = { x: snake[0].x + dir.x * CONFIG.GAME.SPEED, y: snake[0].y + dir.y * CONFIG.GAME.SPEED };
             const aspect = canvas.width / canvas.height;
-            // Wrap logic
+
+            // Wall Wrap
             if (head.x > aspect) { snake.forEach(s => s.x -= 2 * aspect); head.x -= 2 * aspect; }
             if (head.x < -aspect) { snake.forEach(s => s.x += 2 * aspect); head.x += 2 * aspect; }
             if (head.y > 1.0) { snake.forEach(s => s.y -= 2.0); head.y -= 2.0; }
             if (head.y < -1.0) { snake.forEach(s => s.y += 2.0); head.y += 2.0; }
 
-            // Move body
+            // RIPPLE SPAWNING
+            rippleDropTimer++;
+            if (rippleDropTimer > CONFIG.WAKE.TRAIL_DROP_INTERVAL) {
+                ripples.push({ x: head.x, y: head.y, age: 0.0 });
+                rippleDropTimer = 0;
+            }
+
+            // UPDATE RIPPLES
+            for (let i = ripples.length - 1; i >= 0; i--) {
+                ripples[i].age += 0.016;
+                if (ripples[i].age > CONFIG.WAKE.TRAIL_LIFESPAN) ripples.splice(i, 1);
+            }
+            if (ripples.length > CONFIG.WAKE.TRAIL_MAX_COUNT) ripples.shift();
+
+            // UPDATE BODY
             let nextSnake = [head];
             for (let i = 1; i < snake.length; i++) {
                 let prev = nextSnake[i - 1];
                 let curr = snake[i];
-                let dx = curr.x - prev.x;
-                let dy = curr.y - prev.y;
+                let dx = curr.x - prev.x; let dy = curr.y - prev.y;
                 let d = Math.sqrt(dx * dx + dy * dy);
-                const segLen = 0.04;
-                if (d > segLen) {
-                    let r = (d - segLen) / d;
-                    curr.x -= dx * r;
-                    curr.y -= dy * r;
+                if (d > CONFIG.GAME.SEGMENT_DIST) {
+                    let r = (d - CONFIG.GAME.SEGMENT_DIST) / d;
+                    curr.x -= dx * r; curr.y -= dy * r;
                 }
                 nextSnake.push(curr);
             }
             snake = nextSnake;
 
-            // Apple logic
+            // APPLE PHYSICS
             if (apple.falling) {
-                apple.z -= 0.05;
-                if (apple.z <= 0) {
-                    apple.z = 0;
-                    apple.falling = false;
-                    splashTimer = 0.001;
-                }
+                apple.z -= CONFIG.APPLE.FALL_SPEED;
+                if (apple.z <= 0) { apple.z = 0; apple.falling = false; splashTimer = 0.001; }
             } else {
-                let dx = head.x - apple.x;
-                let dy = head.y - apple.y;
+                // Collision
+                let dx = head.x - apple.x; let dy = head.y - apple.y;
                 if (Math.sqrt(dx * dx + dy * dy) < 0.1) {
-                    score++;
-                    uiScore.innerText = "Score: " + score;
-                    snake.push({ ...snake[snake.length - 1] });
-                    spawnApple();
+                    score++; uiScore.innerText = "Score: " + score;
+                    snake.push({ ...snake[snake.length - 1] }); spawnApple();
                 }
             }
+            if (splashTimer > 0) { splashTimer += 0.015; if (splashTimer > 2.0) splashTimer = 0; }
 
-            if (splashTimer > 0) {
-                splashTimer += 0.015;
-                if (splashTimer > 2.0) splashTimer = 0;
-            }
-
-            // Collision
+            // SELF COLLISION
             for (let i = 10; i < snake.length; i++) {
-                let dx = head.x - snake[i].x;
-                let dy = head.y - snake[i].y;
-                if (Math.sqrt(dx * dx + dy * dy) < 0.02) {
-                    score = 0;
-                    uiScore.innerText = "Score: 0";
-                    snake = snake.slice(0, 15);
+                let dx = head.x - snake[i].x; let dy = head.y - snake[i].y;
+                if (Math.sqrt(dx * dx + dy * dy) < CONFIG.GAME.SEGMENT_DIST * 0.5) {
+                    score = 0; uiScore.innerText = "Score: 0";
+                    snake = [];
+                    for (let k = 0; k < CONFIG.GAME.START_LENGTH; k++) snake.push({ x: 0, y: -k * CONFIG.GAME.SEGMENT_DIST });
                 }
             }
 
-            // Render
+            // RENDER PREP
             let flatSnake = [];
-            for (let i = 0; i < snake.length; i++) {
-                flatSnake.push(snake[i].x);
-                flatSnake.push(snake[i].y);
+            snake.forEach(s => flatSnake.push(s.x, s.y));
+            // Fill Buffer to prevent GL errors
+            while (flatSnake.length < CONFIG.GAME.MAX_SNAKE_RENDER * 2) flatSnake.push(0, 0);
+
+            let flatRipples = [];
+            for (let i = 0; i < ripples.length; i++) {
+                flatRipples.push(ripples[i].x, ripples[i].y, ripples[i].age);
             }
-            // Fill array to avoid gl errors
-            while (flatSnake.length < 120) flatSnake.push(0, 0);
+            while (flatRipples.length < CONFIG.WAKE.TRAIL_MAX_COUNT * 3) flatRipples.push(0, 0, 100.0);
 
             gl.uniform2fv(locs.res, [canvas.width, canvas.height]);
             gl.uniform1f(locs.time, shaderTime);
             gl.uniform2fv(locs.snake, new Float32Array(flatSnake));
             gl.uniform1i(locs.snakeLen, snake.length);
+            gl.uniform3fv(locs.ripples, new Float32Array(flatRipples));
+            gl.uniform1i(locs.rippleCount, ripples.length);
             gl.uniform3f(locs.apple, apple.x, apple.y, apple.z);
-            gl.uniform1f(locs.appleSplash, splashTimer > 0 ? splashTimer : 0.0);
+            gl.uniform1f(locs.appleSplash, splashTimer);
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
             requestAnimationFrame(loop);
