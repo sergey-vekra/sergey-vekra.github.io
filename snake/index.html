@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Hydro Snake - Configurable Lighting</title>
+    <title>Hydro Snake - Predator Strike</title>
     <style>
         body {
             margin: 0;
@@ -54,14 +54,14 @@
 <body>
     <div id="ui">
         <h1 id="score">Score: 0</h1>
-        <p>Configurable Luminance</p>
-        <p class="hint">Edit CONFIG object in source to tweak lighting</p>
+        <p>Hydrosnake</p>
+        <p class="hint">Version 2.0</p>
     </div>
     <canvas id="glcanvas"></canvas>
 
     <script>
         // ==================================================================================
-        //  ⚙️ EXPANDED CONFIGURATION ⚙️
+        //  ⚙️ CONFIGURATION ⚙️
         // ==================================================================================
         const CONFIG = {
             GAME: {
@@ -73,8 +73,8 @@
             },
 
             WATER: {
-                COLOR_DEEP: [0.0, 0.02, 0.1],      // Darker deep water for contrast
-                COLOR_SHALLOW: [0.0, 0.25, 0.45], // Teal shallow water
+                COLOR_DEEP: [0.0, 0.02, 0.1],
+                COLOR_SHALLOW: [0.0, 0.25, 0.45],
                 WAVE_SPEED: 1.2,
                 NOISE_SCALE: 4.0,
                 SPECULAR_POWER: 60.0,
@@ -82,43 +82,32 @@
                 REFRACTION_STR: 0.04,
             },
 
-            // New section specifically for the glowing food
             APPLE: {
                 RADIUS: 0.030,
-                // Neon Red/Orange (Values > 1.0 create bloom artifacts)
-                COLOR: [2.5, 0.4, 0.1],
-
-                // Visualization of the object itself
-                CORE_BRIGHTNESS: 2.0,    // How bright the center of the apple is
-                EDGE_SOFTNESS: 0.2,      // 0.0 = Hard edge, 1.0 = Fuzzy ball of light
-
-                // Animation
+                COLOR: [2.5, 0.4, 0.1], // Neon Orange
+                CORE_BRIGHTNESS: 2.0,
+                EDGE_SOFTNESS: 0.2,
                 BOB_SPEED: 3.0,
                 BOB_HEIGHT: 0.5,
             },
 
-            // New section to control how the light affects the scene
             LIGHTING: {
-                // Controls how the light falls off with distance
-                // Higher = Light dies faster (smaller pool of light)
-                // Lower = Light travels further
                 FALLOFF_STEEPNESS: 100.0,
-
-                // How strong the light reflects on the water ripples
                 WATER_REFLECTION_STR: 0.2,
-
-                // How much the snake's body lights up when near the food
-                SNAKE_ILLUMINATION_STR: 1.2,
+                SNAKE_ILLUMINATION_STR: 0.2,
             },
 
             SNAKE_VISUALS: {
                 RADIUS: 0.025,
                 SMOOTH_BLEND: 0.035,
-                COLOR_BODY_BASE: [0.05, 0.2, 0.1],   // Very dark base to pop against light
-                COLOR_BODY_SCALES: [0.4, 0.8, 0.3],  // Scale color
-                COLOR_EYES: [1.0, 0.9, 0.2],         // Bright eyes
+                COLOR_BODY_BASE: [0.05, 0.2, 0.1],
+                COLOR_BODY_SCALES: [0.4, 0.8, 0.3],
+                COLOR_EYES_NORMAL: [1.0, 0.9, 0.2], // Yellowish
+                COLOR_EYES_HUNT: [1.0, 0.9, 0.2],   // Red (Active during strike)
                 SCALE_DENSITY_X: 3.0,
                 SCALE_DENSITY_Y: 20.0,
+                // Fun Settings
+                MOUTH_OPEN_DIST: 0.40, // Distance to start reacting
             },
 
             WAKE: {
@@ -198,7 +187,6 @@
                     height += wave * mask * ${glFloat(CONFIG.WAKE.RIPPLE_HEIGHT)} * alpha;
                 }
 
-                // Apple Splash
                 if (u_appleSplash > 0.0) {
                     float dApple = length(p - u_apple.xy);
                     float wave = sin(dApple * 50.0 - u_appleSplash * 20.0);
@@ -219,8 +207,13 @@
                 float accumWeight = 0.0;
                 
                 vec2 headPos = u_snake[0];
-                vec2 headDir = normalize(u_snake[0] - u_snake[1]);
+                vec2 headDir = normalize(u_snake[0] - u_snake[1]); 
                 vec2 headRight = vec2(-headDir.y, headDir.x);
+
+                // --- STRIKE LOGIC ---
+                float distToApple = length(headPos - u_apple.xy);
+                float mouthOpen = smoothstep(${glFloat(CONFIG.SNAKE_VISUALS.MOUTH_OPEN_DIST)}, 0.0, distToApple);
+                if (u_apple.z > 0.2) mouthOpen = 0.0;
 
                 for (int i = 0; i < MAX_SNAKE; i++) {
                     if (i >= u_snakeLen - 1) break;
@@ -232,9 +225,28 @@
                     
                     float rad = radius;
                     if (i > u_snakeLen - 3) rad *= 0.6; 
-                    if (i == 0) rad *= 1.15; 
-
+                    
                     float dSeg = segDist - rad;
+
+                    // --- HEAD DEFORMATION ---
+                    if (i == 0) {
+                        // 1. Skull (where the eyes are)
+                        float skullRad = radius * 1.15;
+                        float dSkull = length(p - a) - skullRad;
+                        
+                        // 2. Snout (Front of the head)
+                        // It pushes forward and grows larger as mouthOpen increases
+                        // simulating the upper jaw lifting towards the camera
+                        float snoutOffset = radius * (0.3 + mouthOpen * 0.3);
+                        vec2 snoutPos = a + headDir * snoutOffset;
+                        
+                        float snoutRad = radius * (0.7 + mouthOpen * 0.7);
+                        float dSnout = length(p - snoutPos) - snoutRad;
+
+                        // Combine Skull and Snout
+                        dSeg = smin(dSkull, dSnout, 0.04);
+                    }
+
                     if (i == 0) dSnake = dSeg;
                     else dSnake = smin(dSnake, dSeg, ${glFloat(CONFIG.SNAKE_VISUALS.SMOOTH_BLEND)});
 
@@ -252,35 +264,65 @@
                     float finalPattern = (accumWeight > 0.0) ? accumPattern / accumWeight : 0.0;
                     vec3 skin = mix(${glVec3(CONFIG.SNAKE_VISUALS.COLOR_BODY_BASE)}, ${glVec3(CONFIG.SNAKE_VISUALS.COLOR_BODY_SCALES)}, smoothstep(-0.8, 0.8, finalPattern));
                     
-                    // Eyes
+                    // --- EYES ---
                     vec2 localHead = p - headPos;
                     float hx = dot(localHead, headRight);
                     float hy = dot(localHead, headDir);
-                    if (length(vec2(hx, hy) - vec2(-radius*0.5, radius*0.2)) < radius*0.25 || 
-                        length(vec2(hx, hy) - vec2(radius*0.5, radius*0.2)) < radius*0.25) {
-                        skin = ${glVec3(CONFIG.SNAKE_VISUALS.COLOR_EYES)} * 2.0;
+                    
+                    // Eyes sit on the "Skull" part, slightly wide
+                    vec2 eyeOffset = vec2(radius * 0.55, radius * 0.2);
+                    
+                    if (length(vec2(hx, hy) - vec2(-eyeOffset.x, eyeOffset.y)) < radius*0.28 || 
+                        length(vec2(hx, hy) - vec2(eyeOffset.x, eyeOffset.y)) < radius*0.28) {
+                        
+                        skin = mix(
+                            ${glVec3(CONFIG.SNAKE_VISUALS.COLOR_EYES_NORMAL)}, 
+                            ${glVec3(CONFIG.SNAKE_VISUALS.COLOR_EYES_HUNT)}, 
+                            mouthOpen
+                        ) * 2.5; 
                     }
 
-                    // Ambient Lighting
+                    // --- THROAT / GULLET ---
+                    // Visible when mouth is wide open (top-down view of throat)
+                    if (mouthOpen > 0.5) {
+                        // Calculate position of the snout center again
+                        float snoutOffset = radius * (0.3 + mouthOpen * 0.3);
+                        vec2 snoutPos = headPos + headDir * snoutOffset;
+                        
+                        // Small dark hole in the middle of the expanded snout
+                        float dThroat = length(p - snoutPos) - (radius * 0.3 * mouthOpen);
+                        if (dThroat < 0.0) {
+                            float throatEdge = smoothstep(0.0, -0.01, dThroat);
+                            skin = mix(skin, vec3(0.05, 0.0, 0.0), throatEdge * 0.9);
+                        }
+                    }
+
+                    // --- HEIGHT DISPLACEMENT ---
+                    // Bump the head height up when striking
+                    float strikeLift = 0.0;
+                    float dHeadDist = length(p - headPos);
+                    if (dHeadDist < radius * 2.5) {
+                        strikeLift = mouthOpen * 0.06 * smoothstep(radius*2.5, 0.0, dHeadDist);
+                    }
+
+                    // Ambient & Specular
                     float fresnel = pow(1.0 + dSnake/radius, 3.0);
                     skin += vec3(0.4) * fresnel;
 
-                    // --- SNAKE LIGHT RECEPTION ---
+                    // Light Interaction
                     float dToLight = length(p - u_apple.xy);
                     vec3 lightColor = ${glVec3(CONFIG.APPLE.COLOR)};
-                    // Configurable Falloff
                     float falloff = 1.0 / (1.0 + dToLight * dToLight * ${glFloat(CONFIG.LIGHTING.FALLOFF_STEEPNESS)});
                     float verticalAtten = 1.0 / (1.0 + u_apple.z * 5.0);
                     
                     skin += lightColor * falloff * verticalAtten * ${glFloat(CONFIG.LIGHTING.SNAKE_ILLUMINATION_STR)};
 
                     col = skin;
-                    height += 0.02; 
+                    height += 0.02 + strikeLift; // Add the lift to the height map
                 }
 
-                // 2. APPLE RENDERING (Luminance Object)
+                // 2. APPLE RENDERING
                 vec2 applePos = u_apple.xy;
-                // Bobbing cancels if falling
                 float bob = sin(u_time * ${glFloat(CONFIG.APPLE.BOB_SPEED)}) * ${glFloat(CONFIG.APPLE.BOB_HEIGHT)};
                 if (u_apple.z > 0.01) bob = 0.0; 
                 
@@ -290,7 +332,6 @@
                 float dApple = length(p - applePos) - appleRad;
                 
                 if (dApple < 0.0) {
-                    // Configurable Core and Softness
                     float edge = smoothstep(0.0, -appleRad * ${glFloat(CONFIG.APPLE.EDGE_SOFTNESS)}, dApple);
                     vec3 appleCol = ${glVec3(CONFIG.APPLE.COLOR)};
                     col = appleCol * (${glFloat(CONFIG.APPLE.CORE_BRIGHTNESS)} * edge);
@@ -302,7 +343,6 @@
                 vec2 uv = gl_FragCoord.xy / u_resolution.xy;
                 vec2 p = (2.0*gl_FragCoord.xy - u_resolution.xy) / u_resolution.y;
 
-                // Water Normal Calc
                 float e = 0.005;
                 float h = getHeight(p);
                 float hx = getHeight(p + vec2(e, 0.0));
@@ -318,14 +358,12 @@
                 vec2 distortedUV = uv + normal.xy * ${glFloat(CONFIG.WATER.REFRACTION_STR)};
                 float noiseVal = noise(distortedUV * 3.0 + u_time * 0.1);
                 
-                // Base Water Color
                 vec3 finalColor = mix(${glVec3(CONFIG.WATER.COLOR_DEEP)}, ${glVec3(CONFIG.WATER.COLOR_SHALLOW)}, noiseVal + h * 2.0);
                 
                 float caustics = smoothstep(0.6, 1.0, noise(p*8.0 + u_time + normal.xy));
                 finalColor += caustics * 0.08 * vec3(0.7, 0.9, 1.0);
                 finalColor += vec3(1.0) * specular * ${glFloat(CONFIG.WATER.SPECULAR_INTENSITY)};
 
-                // Snake Shadow
                 vec2 shadowOffset = vec2(0.04, -0.04);
                 float dSnakeShadow = 100.0;
                 for (int i = 0; i < MAX_SNAKE; i++) {
@@ -334,28 +372,19 @@
                 }
                 if (dSnakeShadow < ${glFloat(CONFIG.SNAKE_VISUALS.RADIUS)}) finalColor *= 0.6;
 
-                // --- SCENE LIGHTING FROM APPLE ---
                 float dToApple = length(p - u_apple.xy);
-                
-                // Configurable Falloff
                 float lightAtten = 1.0 / (1.0 + dToApple * dToApple * ${glFloat(CONFIG.LIGHTING.FALLOFF_STEEPNESS)});
-                lightAtten *= 1.0 / (1.0 + u_apple.z * 5.0); // Dim when high up
+                lightAtten *= 1.0 / (1.0 + u_apple.z * 5.0); 
                 
-                // Add reflection to water
                 vec3 appleLightCol = ${glVec3(CONFIG.APPLE.COLOR)};
-                
-                // 1. Diffuse Glow on water surface
                 finalColor += appleLightCol * lightAtten * 0.2;
                 
-                // 2. Specular Reflection (The bright spot on the waves)
                 vec3 appleLightDir = normalize(vec3(u_apple.xy - p, 0.2)); 
                 vec3 appleReflect = reflect(-appleLightDir, normal);
                 float appleSpec = pow(max(dot(appleReflect, viewDir), 0.0), 10.0);
                 
                 finalColor += appleLightCol * appleSpec * lightAtten * ${glFloat(CONFIG.LIGHTING.WATER_REFLECTION_STR)};
 
-
-                // --- RENDER OBJECTS ---
                 vec3 objCol = vec3(0.0);
                 float objHeight = 0.0;
                 vec2 objP = p + normal.xy * 0.01; 
@@ -367,7 +396,6 @@
                     finalColor = objCol; 
                 }
 
-                // Vignette
                 float vig = 1.0 - length(uv - 0.5) * 0.5;
                 finalColor *= vig;
 
