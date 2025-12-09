@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Hydro Snake - Enhanced Visuals</title>
+    <title>Hydro Snake - Visual Fixes</title>
     <style>
         body {
             margin: 0;
@@ -48,7 +48,7 @@
 <body>
     <div id="ui">
         <h1 id="score">Score: 0</h1>
-        <p>Visuals Upgraded: Scales, Wet Lighting, 3D Apple</p>
+        <p>Fixed: Bright Apple & Moving Skin Pattern</p>
     </div>
     <canvas id="glcanvas"></canvas>
 
@@ -60,7 +60,7 @@
             GAME: {
                 SPEED: 0.008,
                 START_LENGTH: 8,
-                SEGMENT_DIST: 0.04, // Closer segments for better fusion
+                SEGMENT_DIST: 0.04,
                 TURN_SENSITIVITY: 30,
                 MAX_SNAKE_RENDER: 60,
             },
@@ -77,18 +77,18 @@
 
             SNAKE_VISUALS: {
                 RADIUS: 0.025,
-                SMOOTH_BLEND: 0.03, // How much segments melt into each other (Metaballs)
-                COLOR_BODY_BASE: [0.1, 0.6, 0.3], // Base green
-                COLOR_BODY_SCALES: [0.6, 0.9, 0.2], // Lighter scale highlights
-                COLOR_BELLY: [0.8, 0.9, 0.5], // Light belly color
-                COLOR_EYES: [1.0, 0.6, 0.0], // Glowing Orange eyes
-                SCALE_DENSITY: 80.0,
+                SMOOTH_BLEND: 0.035, // Blending between segments
+                COLOR_BODY_BASE: [0.1, 0.5, 0.2], // Darker green base
+                COLOR_BODY_SCALES: [0.6, 0.9, 0.3], // Bright yellow-green scales
+                COLOR_EYES: [1.0, 0.8, 0.0],
+                SCALE_DENSITY_X: 3.0, // Frequency along the body
+                SCALE_DENSITY_Y: 20.0, // Frequency around the body
             },
 
             APPLE: {
-                RADIUS: 0.032,
-                COLOR: [0.85, 0.05, 0.1],
-                STEM_COLOR: [0.4, 0.2, 0.1],
+                RADIUS: 0.035,
+                COLOR: [0.95, 0.1, 0.1], // Brighter Red
+                STEM_COLOR: [0.4, 0.25, 0.1],
                 BOB_SPEED: 3.0,
                 BOB_HEIGHT: 0.005,
             },
@@ -131,7 +131,6 @@
             uniform int u_rippleCount;
 
             // --- UTILS ---
-            // Polynomial Smooth Min (Metaball function)
             float smin( float a, float b, float k ) {
                 float h = clamp( 0.5+0.5*(b-a)/k, 0.0, 1.0 );
                 return mix( b, a, h ) - k*h*(1.0-h);
@@ -151,13 +150,6 @@
                 vec3 h = max( 0.5-vec3(dot(a,a), dot(b,b), dot(c,c) ), 0.0 );
                 vec3 n = h*h*h*h*vec3( dot(a,hash(i+0.0)), dot(b,hash(i+o)), dot(c,hash(i+1.0)));
                 return dot( n, vec3(70.0) );
-            }
-
-            // --- SDF SHAPES ---
-            float sdSegment( in vec2 p, in vec2 a, in vec2 b ) {
-                vec2 pa = p-a, ba = b-a;
-                float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
-                return length( pa - ba*h );
             }
 
             // --- WATER HEIGHT MAP ---
@@ -192,87 +184,107 @@
             }
 
             // --- RENDER OBJECTS ---
-            // Returns vec4(color.rgb, alpha/mask)
-            // Also modifies normal for lighting details
             void getObjects(vec2 p, vec2 uv, inout vec3 col, inout float height) {
                 
-                // 1. SNAKE RENDERING (Metaballs)
+                // 1. SNAKE RENDERING (Weighted Texture Coordinate)
                 float dSnake = 100.0;
                 float radius = ${glFloat(CONFIG.SNAKE_VISUALS.RADIUS)};
                 
-                // Head vector (used for eyes)
+                // Variables to accumulate the "Skin Pattern"
+                float accumPattern = 0.0;
+                float accumWeight = 0.0;
+                
+                // Head data
                 vec2 headPos = u_snake[0];
                 vec2 headDir = normalize(u_snake[0] - u_snake[1]);
                 vec2 headRight = vec2(-headDir.y, headDir.x);
 
-                // Build the SDF field for the snake body
                 for (int i = 0; i < MAX_SNAKE; i++) {
                     if (i >= u_snakeLen - 1) break;
+                    
+                    vec2 a = u_snake[i];
+                    vec2 b = u_snake[i+1];
+                    
+                    // Segment SDF Math
+                    vec2 pa = p - a, ba = b - a;
+                    float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+                    float segDist = length(pa - ba*h);
                     
                     // Taper tail
                     float rad = radius;
                     if (i > u_snakeLen - 3) rad *= 0.6; 
                     if (i == 0) rad *= 1.15; // Bigger head
 
-                    float seg = sdSegment(p, u_snake[i], u_snake[i+1]) - rad;
-                    
-                    if (i == 0) dSnake = seg;
-                    else dSnake = smin(dSnake, seg, ${glFloat(CONFIG.SNAKE_VISUALS.SMOOTH_BLEND)});
+                    // Update Global Distance
+                    float dSeg = segDist - rad;
+                    if (i == 0) dSnake = dSeg;
+                    else dSnake = smin(dSnake, dSeg, ${glFloat(CONFIG.SNAKE_VISUALS.SMOOTH_BLEND)});
+
+                    // --- SKIN PATTERN CALCULATION ---
+                    // Only calculate pattern if we are somewhat close to this segment (Optimization)
+                    if (segDist < radius * 2.0) {
+                        // "Longitudinal" coordinate: The index 'i' plus the progress 'h' along the segment
+                        // This moves WITH the snake nodes
+                        float bodyPos = float(i) + h; 
+                        
+                        // "Transverse" coordinate: Distance from center line
+                        // Use segDist to fake wrapping around the cylinder
+                        float wrap = asin(clamp(segDist / rad, -1.0, 1.0)); 
+                        
+                        // Generate Checkered/Scale pattern
+                        // We use bodyPos to drive the main pattern
+                        float scalePat = sin(bodyPos * ${glFloat(CONFIG.SNAKE_VISUALS.SCALE_DENSITY_X)}) * 
+                                         sin(uv.x * ${glFloat(CONFIG.SNAKE_VISUALS.SCALE_DENSITY_Y)} + bodyPos);
+                                         
+                        // Weight based on closeness to this segment (so blends are smooth)
+                        float w = 1.0 / (segDist * segDist + 0.0001);
+                        accumPattern += scalePat * w;
+                        accumWeight += w;
+                    }
                 }
 
                 if (dSnake < 0.0) {
-                    // Snake Body Color
-                    float pattern = sin(p.x * ${glFloat(CONFIG.SNAKE_VISUALS.SCALE_DENSITY)}) * sin(p.y * ${glFloat(CONFIG.SNAKE_VISUALS.SCALE_DENSITY)});
+                    // Normalize accumulated pattern
+                    float finalPattern = (accumWeight > 0.0) ? accumPattern / accumWeight : 0.0;
                     
-                    // "Belly" check (dot product with normal estimation)
-                    // Simple fake normal for coloring
-                    vec3 fakeNorm = normalize(vec3(p - headPos, radius)); 
-                    
-                    vec3 skin = mix(${glVec3(CONFIG.SNAKE_VISUALS.COLOR_BODY_BASE)}, ${glVec3(CONFIG.SNAKE_VISUALS.COLOR_BODY_SCALES)}, smoothstep(-1.0, 1.0, pattern));
+                    vec3 skin = mix(${glVec3(CONFIG.SNAKE_VISUALS.COLOR_BODY_BASE)}, ${glVec3(CONFIG.SNAKE_VISUALS.COLOR_BODY_SCALES)}, smoothstep(-0.8, 0.8, finalPattern));
                     
                     // Eyes
                     vec2 localHead = p - headPos;
-                    // Rotate to head space
                     float hx = dot(localHead, headRight);
                     float hy = dot(localHead, headDir);
-                    
-                    // Eye Coordinates
                     vec2 eyeL = vec2(-radius*0.5, radius*0.2);
                     vec2 eyeR = vec2(radius*0.5, radius*0.2);
-                    
                     if (length(vec2(hx, hy) - eyeL) < radius*0.25 || length(vec2(hx, hy) - eyeR) < radius*0.25) {
-                        skin = ${glVec3(CONFIG.SNAKE_VISUALS.COLOR_EYES)} * 1.5; // Glow
+                        skin = ${glVec3(CONFIG.SNAKE_VISUALS.COLOR_EYES)} * 2.0;
                     }
 
-                    // Rim Lighting (Fresnel) for wet look
+                    // Wet lighting
                     float fresnel = pow(1.0 + dSnake/radius, 3.0);
-                    skin += vec3(0.3) * fresnel;
-
+                    skin += vec3(0.4) * fresnel;
+                    
                     col = skin;
-                    height += 0.02; // Raise snake above water
+                    height += 0.02; 
                 }
 
-                // 2. APPLE RENDERING
+                // 2. APPLE RENDERING (Improved Visibility)
                 vec2 applePos = u_apple.xy;
-                // Bobbing animation
+                // Bobbing
                 float bob = sin(u_time * ${glFloat(CONFIG.APPLE.BOB_SPEED)}) * ${glFloat(CONFIG.APPLE.BOB_HEIGHT)};
-                if (u_apple.z > 0.01) bob = 0.0; // Don't bob if falling
+                if (u_apple.z > 0.01) bob = 0.0; 
                 
-                // Perspective adjust for falling
                 float scale = 1.0 + u_apple.z * 0.8;
                 float appleRad = ${glFloat(CONFIG.APPLE.RADIUS)} * scale;
 
-                // Simple sphere SDF
                 float dApple = length(p - applePos) - appleRad;
                 
                 if (dApple < 0.0) {
-                    // Local coords inside apple (-1 to 1)
                     vec2 localA = (p - applePos) / appleRad;
-                    float z = sqrt(1.0 - dot(localA, localA)); // Sphere Z
+                    float z = sqrt(1.0 - dot(localA, localA)); 
                     
                     vec3 appleCol = ${glVec3(CONFIG.APPLE.COLOR)};
                     
-                    // Dimple at top (rotate local coords to make dimple face up/light)
+                    // Dimple
                     float dimple = smoothstep(0.1, 0.5, distance(localA, vec2(0.1, 0.1)));
                     appleCol *= (0.5 + 0.5*dimple);
 
@@ -281,16 +293,26 @@
                          appleCol = ${glVec3(CONFIG.APPLE.STEM_COLOR)};
                     }
 
-                    // Lighting on Apple
-                    vec3 lightPos = vec3(-0.5, 0.5, 1.0);
+                    // --- IMPROVED LIGHTING ---
+                    vec3 lightPos = normalize(vec3(-0.5, 0.5, 1.0));
                     vec3 norm = normalize(vec3(localA, z));
+                    
+                    // Strong Diffuse
                     float diff = max(dot(norm, lightPos), 0.0);
-                    float spec = pow(max(dot(norm, normalize(lightPos + vec3(0,0,1))), 0.0), 30.0);
                     
-                    col = appleCol * (0.4 + 0.6*diff) + vec3(1.0)*spec*0.6;
+                    // Sharp Specular (Wet look)
+                    vec3 reflectDir = reflect(-lightPos, norm);
+                    float spec = pow(max(dot(reflectDir, vec3(0,0,1)), 0.0), 40.0);
                     
-                    // Fake ambient occlusion at edges
-                    col *= smoothstep(0.0, 0.1, -dApple);
+                    // Rim Light (To pop against dark water)
+                    float rim = 1.0 - max(dot(vec3(0,0,1), norm), 0.0);
+                    vec3 rimColor = vec3(1.0, 0.3, 0.3) * pow(rim, 3.0);
+
+                    // Combine: Ambient + Diffuse + Specular + Rim
+                    col = appleCol * (0.5 + 0.8*diff) + vec3(1.0)*spec*0.9 + rimColor;
+                    
+                    // Fake edge anti-aliasing / smoothing
+                    col *= smoothstep(0.0, 0.05, -dApple);
                     height += 0.02 + u_apple.z;
                 }
             }
@@ -299,7 +321,7 @@
                 vec2 uv = gl_FragCoord.xy / u_resolution.xy;
                 vec2 p = (2.0*gl_FragCoord.xy - u_resolution.xy) / u_resolution.y;
 
-                // --- WATER RENDERING ---
+                // Water
                 float e = 0.005;
                 float h = getHeight(p);
                 float hx = getHeight(p + vec2(e, 0.0));
@@ -310,45 +332,34 @@
                 vec3 viewDir = vec3(0.0, 0.0, 1.0);
                 vec3 halfDir = normalize(lightDir + viewDir);
                 
-                // Specular Water
                 float specular = pow(max(dot(normal, halfDir), 0.0), ${glFloat(CONFIG.WATER.SPECULAR_POWER)}); 
                 
-                // Refraction
                 vec2 distortedUV = uv + normal.xy * ${glFloat(CONFIG.WATER.REFRACTION_STR)};
                 float noiseVal = noise(distortedUV * 3.0 + u_time * 0.1);
                 
                 vec3 finalColor = mix(${glVec3(CONFIG.WATER.COLOR_DEEP)}, ${glVec3(CONFIG.WATER.COLOR_SHALLOW)}, noiseVal + h * 2.0);
                 
-                // Add Caustics
                 float caustics = smoothstep(0.6, 1.0, noise(p*8.0 + u_time + normal.xy));
                 finalColor += caustics * 0.08 * vec3(0.7, 0.9, 1.0);
                 finalColor += vec3(1.0) * specular * ${glFloat(CONFIG.WATER.SPECULAR_INTENSITY)};
 
-                // --- SHADOWS ---
-                // Simple drop shadow for apple and snake
+                // Shadows
                 vec2 shadowOffset = vec2(0.04, -0.04);
-                
-                // Apple Shadow
                 float dAppleShadow = length((p - shadowOffset) - u_apple.xy) - ${glFloat(CONFIG.APPLE.RADIUS)};
-                if (u_apple.z > 0.0) dAppleShadow -= u_apple.z * 0.5; // Shadow gets smaller as it goes up
+                if (u_apple.z > 0.0) dAppleShadow -= u_apple.z * 0.5;
                 if (dAppleShadow < 0.0) finalColor *= 0.7;
 
-                // Snake Shadow (approximated)
                 float dSnakeShadow = 100.0;
                 for (int i = 0; i < MAX_SNAKE; i++) {
                     if (i >= u_snakeLen - 1) break;
-                    dSnakeShadow = min(dSnakeShadow, sdSegment(p - shadowOffset, u_snake[i], u_snake[i+1]));
+                    dSnakeShadow = min(dSnakeShadow, length(p - shadowOffset - u_snake[i])); // Quick approx
                 }
                 if (dSnakeShadow < ${glFloat(CONFIG.SNAKE_VISUALS.RADIUS)}) finalColor *= 0.6;
 
-                // --- DRAW OBJECTS ON TOP ---
+                // Objects
                 vec3 objCol = vec3(0.0);
                 float objHeight = 0.0;
-                
-                // We run this to detect if we hit an object
-                vec2 objP = p + normal.xy * 0.01; // Refract object position slightly
-                
-                // If apple is in air, don't refract it
+                vec2 objP = p + normal.xy * 0.01; 
                 if (u_apple.z > 0.01) objP = p; 
 
                 getObjects(objP, uv, objCol, objHeight);
@@ -366,7 +377,7 @@
         `;
 
         // ==================================================================================
-        //  ENGINE (UNCHANGED LOGIC, JUST PASSING DATA)
+        //  ENGINE
         // ==================================================================================
         const canvas = document.getElementById('glcanvas');
         const gl = canvas.getContext('webgl', { alpha: false, depth: false });
