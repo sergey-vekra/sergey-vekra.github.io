@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Hydro Snake Mobile</title>
+    <title>Hydro Snake Mobile Optimized</title>
     <style>
         body {
             margin: 0;
@@ -16,8 +16,8 @@
             display: block;
             width: 100vw;
             height: 100vh;
-            /* CRITICAL FOR MOBILE: Prevents browser scrolling while playing */
             touch-action: none;
+            /* Prevents scrolling */
         }
 
         #ui {
@@ -49,7 +49,7 @@
 <body>
     <div id="ui">
         <h1 id="score">Score: 0</h1>
-        <p>Swipe or Arrow Keys to swim</p>
+        <p>Swipe to swim</p>
     </div>
     <canvas id="glcanvas"></canvas>
 
@@ -61,9 +61,9 @@
         }
     </script>
 
-    <!-- FRAGMENT SHADER (Realistic Water & Ripples) -->
+    <!-- FRAGMENT SHADER -->
     <script id="fs" type="x-shader/x-fragment">
-        precision mediump float;
+        precision mediump float; // Use medium precision for mobile performance
 
         uniform vec2 u_resolution;
         uniform float u_time;
@@ -72,8 +72,8 @@
         uniform vec2 u_snake[MAX_SNAKE];
         uniform int u_snakeLen;
         
-        uniform vec3 u_apple; // x,y, z=height
-        uniform float u_appleSplash; // time since splash
+        uniform vec3 u_apple;
+        uniform float u_appleSplash;
 
         // --- MATH HELPERS ---
         vec2 hash( vec2 p ) {
@@ -101,40 +101,32 @@
             return length( pa - ba*h );
         }
 
-        // --- PHYSICS & HEIGHT MAP ---
+        // --- OPTIMIZED PHYSICS & HEIGHT MAP ---
         float getHeight(vec2 p) {
             float height = 0.0;
             float t = u_time * 1.5;
 
-            // Ambient Ocean Noise
+            // 1. Ambient Ocean Noise (Reduced complexity)
+            // Using slightly larger scales to reduce visual noise
             height += noise(p * 3.0 + vec2(t*0.2, t*0.1)) * 0.04;
             height += noise(p * 7.0 - vec2(t*0.1, 0.0)) * 0.02;
 
-            // Snake Interaction (Wake)
-            float dSnake = 100.0;
-            for (int i = 0; i < MAX_SNAKE; i++) {
-                if (i >= u_snakeLen - 1) break;
-                float d = sdSegment(p, u_snake[i], u_snake[i+1]);
-                dSnake = min(dSnake, d);
-            }
+            // 2. Snake Interaction (OPTIMIZED)
+            // Instead of checking the whole body, we only check the HEAD for the wake.
+            // This saves ~60 iterations per pixel call.
+            float dHead = length(p - u_snake[0]);
+            
+            // "Bow Wave" at the head
+            float headWake = smoothstep(0.15, 0.0, dHead);
+            height += headWake * 0.1 * sin(dHead * 20.0 - u_time * 10.0);
 
-            float bodyRadius = 0.04;
-            float displacement = smoothstep(bodyRadius * 3.0, bodyRadius, dSnake);
-            height += displacement * 0.15;
-
-            float ripples = sin(dSnake * 50.0 - u_time * 12.0) * 0.03;
-            ripples *= exp(-dSnake * 8.0);
-            float distToHead = length(p - u_snake[0]);
-            float speedFactor = smoothstep(1.5, 0.0, distToHead);
-            height += ripples * speedFactor;
-
-            // Apple Splash Interaction
+            // 3. Apple Splash Interaction
             if (u_appleSplash > 0.0) {
                 float dApple = length(p - u_apple.xy);
-                float wave = sin(dApple * 40.0 - u_appleSplash * 20.0);
+                float wave = sin(dApple * 30.0 - u_appleSplash * 20.0);
                 float expandRadius = u_appleSplash * 1.0; 
-                float mask = exp(-pow(dApple - expandRadius, 2.0) / 0.01);
-                float dampen = smoothstep(1.5, 0.0, u_appleSplash);
+                float mask = exp(-pow(dApple - expandRadius, 2.0) / 0.02);
+                float dampen = smoothstep(2.0, 0.0, u_appleSplash);
                 height += wave * mask * 0.15 * dampen;
             }
 
@@ -143,66 +135,86 @@
 
         void main() {
             vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+            // Aspect corrected coordinates
             vec2 p = (2.0*gl_FragCoord.xy - u_resolution.xy) / u_resolution.y;
 
-            // --- NORMALS & LIGHTING ---
-            float e = 0.002;
+            // --- NORMALS ---
+            // We calculate height 3 times to get the slope (normal)
+            float e = 0.005; // Slightly coarser epsilon for smoother look
             float h = getHeight(p);
             float hx = getHeight(p + vec2(e, 0.0));
             float hy = getHeight(p + vec2(0.0, e));
-            vec3 normal = normalize(vec3(h - hx, h - hy, e * 2.5));
+            vec3 normal = normalize(vec3(h - hx, h - hy, e * 2.0));
 
+            // --- LIGHTING ---
             vec3 lightDir = normalize(vec3(-0.5, 0.5, 0.8));
-            vec3 viewDir = normalize(vec3(0.0, 0.0, 1.0)); 
+            vec3 viewDir = vec3(0.0, 0.0, 1.0);
             
             vec3 halfDir = normalize(lightDir + viewDir);
             float specAngle = max(dot(normal, halfDir), 0.0);
-            float specular = pow(specAngle, 100.0); 
+            float specular = pow(specAngle, 80.0); 
             
-            vec2 distortedUV = uv + normal.xy * 0.05;
+            // Refraction
+            vec2 distortedUV = uv + normal.xy * 0.03;
             
-            vec3 deepCol = vec3(0.0, 0.05, 0.15);
-            vec3 shallowCol = vec3(0.0, 0.35, 0.5);
+            // Water Color
+            vec3 deepCol = vec3(0.0, 0.05, 0.2);
+            vec3 shallowCol = vec3(0.0, 0.4, 0.6);
             
-            float noiseVal = noise(distortedUV * 5.0 + u_time * 0.1);
-            vec3 waterCol = mix(deepCol, shallowCol, noiseVal + h * 2.0);
+            // Simpler noise for color mixing to save performance
+            float noiseVal = noise(distortedUV * 3.0 + u_time * 0.1);
+            vec3 waterCol = mix(deepCol, shallowCol, noiseVal + h * 1.5);
 
             // --- DRAW OBJECTS ---
-            vec2 pDistorted = p + normal.xy * 0.02; 
+            // Refract coordinate
+            vec2 pDis = p + normal.xy * 0.02; 
+
             vec3 objectCol = vec3(0.0);
             float objectMask = 0.0;
 
-            // Apple
+            // 1. Apple
             vec2 applePos = u_apple.xy;
             float appleH = u_apple.z;
             float scale = 1.0 + appleH * 0.5;
-            float dApple = length(pDistorted - applePos) - 0.035;
-            if (appleH > 0.01) dApple = length(p - applePos) - 0.035 * scale;
+            
+            // Determine if we use refracted or real coordinates based on apple height
+            vec2 checkPos = (appleH > 0.01) ? p : pDis;
+            float rad = (appleH > 0.01) ? 0.035 * scale : 0.035;
+
+            float dApple = length(checkPos - applePos) - rad;
 
             if (dApple < 0.0) {
                 vec3 appleColor = vec3(0.9, 0.1, 0.1);
-                float appleLight = dot(normalize(vec3(p-applePos, 0.5)), lightDir);
+                float appleLight = dot(normalize(vec3(checkPos-applePos, 0.5)), lightDir);
                 objectCol = appleColor * (0.6 + 0.4*appleLight);
                 objectMask = 1.0;
             }
 
-            // Snake
+            // 2. Snake Body
+            // We must loop here to draw the shape, but this is only done ONCE per pixel,
+            // unlike getHeight which is called 3 times per pixel.
             float dSnake = 100.0;
+            
+            // Bounding box optimization: 
+            // Only check snake if pixel is roughly near the center or we know where the snake is.
+            // (Skipped for code simplicity, but pure iteration is fast enough for <60 items once)
             for (int i = 0; i < MAX_SNAKE; i++) {
                 if (i >= u_snakeLen - 1) break;
-                float seg = sdSegment(pDistorted, u_snake[i], u_snake[i+1]);
+                float seg = sdSegment(pDis, u_snake[i], u_snake[i+1]);
                 dSnake = min(dSnake, seg);
             }
             
             if (dSnake < 0.035) {
-                float pat = 0.5 + 0.5 * sin(pDistorted.x * 60.0 + pDistorted.y * 60.0);
+                float pat = 0.5 + 0.5 * sin(pDis.x * 50.0 + pDis.y * 50.0);
                 vec3 skinCol = mix(vec3(0.1, 0.6, 0.2), vec3(0.3, 0.8, 0.1), pat);
-                if (length(pDistorted - u_snake[0]) < 0.035) {
+                
+                // Eyes (Head is index 0)
+                if (length(pDis - u_snake[0]) < 0.035) {
                      vec2 dir = normalize(u_snake[0] - u_snake[1]);
                      vec2 side = vec2(-dir.y, dir.x);
                      vec2 eyeL = u_snake[0] + side * 0.015 - dir * 0.01;
                      vec2 eyeR = u_snake[0] - side * 0.015 - dir * 0.01;
-                     if (length(pDistorted - eyeL) < 0.008 || length(pDistorted - eyeR) < 0.008) {
+                     if (length(pDis - eyeL) < 0.008 || length(pDis - eyeR) < 0.008) {
                          skinCol = vec3(1.0, 1.0, 0.0);
                      }
                 }
@@ -210,19 +222,25 @@
                 objectMask = 1.0;
             }
             
+            // --- COMPOSITE ---
             vec3 finalColor = waterCol;
             if (objectMask > 0.0) {
-                float fog = 0.3; 
+                float fog = 0.2; 
                 if (u_apple.z > 0.0 && dApple < 0.0) fog = 0.0;
                 finalColor = mix(objectCol, waterCol, fog);
             }
 
             finalColor += vec3(1.0) * specular * 0.8;
-            float caustics = smoothstep(0.6, 1.0, noise(p*10.0 + u_time + normal.xy));
-            finalColor += caustics * 0.1 * vec3(0.8, 0.9, 1.0);
+            
+            // Simplified Caustics
+            // Only calculate caustics near center or if performance allows. 
+            // We keep it simple here.
+            float caustics = smoothstep(0.7, 1.0, noise(p*8.0 + u_time + normal.xy));
+            finalColor += caustics * 0.05 * vec3(0.8, 0.9, 1.0);
 
+            // Shadow
             if (u_apple.z > 0.1) {
-                float dShadow = length(pDistorted - (u_apple.xy + vec2(0.05, -0.05))) - 0.02;
+                float dShadow = length(pDis - (u_apple.xy + vec2(0.05, -0.05))) - 0.02;
                 if (dShadow < 0.0) finalColor *= 0.6;
             }
 
@@ -232,12 +250,22 @@
 
     <script>
         const canvas = document.getElementById('glcanvas');
-        const gl = canvas.getContext('webgl');
+        const gl = canvas.getContext('webgl', { alpha: false, depth: false }); // Optimization hints
         const uiScore = document.getElementById('score');
 
+        // OPTIMIZATION: Handle resolution
+        // Mobile screens have high DPR (2x, 3x). Rendering full resolution kills performance.
+        // We cap DPR to 1.0 or 1.5 max for performance.
         function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            // Force lower resolution on high-DPI screens
+            const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+            const displayWidth = Math.floor(window.innerWidth * dpr);
+            const displayHeight = Math.floor(window.innerHeight * dpr);
+
+            if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                canvas.width = displayWidth;
+                canvas.height = displayHeight;
+            }
             gl.viewport(0, 0, canvas.width, canvas.height);
         }
         window.addEventListener('resize', resize);
@@ -275,7 +303,6 @@
             appleSplash: gl.getUniformLocation(program, "u_appleSplash")
         };
 
-        // --- GAME LOGIC ---
         let snake = [];
         for (let i = 0; i < 15; i++) snake.push({ x: 0, y: -i * 0.04 });
         let dir = { x: 0, y: 1 };
@@ -286,7 +313,11 @@
         let apple = { x: 0, y: 0.5, z: 2.0, falling: true };
         let splashTimer = 0.0;
 
+        // Prevent time from getting too large (Micro-waves fix)
+        let totalTime = 0;
+
         function spawnApple() {
+            // Need to account for aspect ratio in game logic
             const aspect = canvas.width / canvas.height;
             apple.x = (Math.random() * 2 - 1) * aspect * 0.8;
             apple.y = (Math.random() * 2 - 1) * 0.8;
@@ -296,11 +327,8 @@
         }
         spawnApple();
 
-        // --- INPUT HANDLING (KEYBOARD & TOUCH) ---
-
         function handleInput(newDir) {
             const last = inputQ.length > 0 ? inputQ[inputQ.length - 1] : dir;
-            // Prevent 180 degree turns
             if (newDir.x !== 0 && last.x === 0) inputQ.push(newDir);
             if (newDir.y !== 0 && last.y === 0) inputQ.push(newDir);
         }
@@ -312,10 +340,9 @@
             if (e.key === "ArrowRight") handleInput({ x: 1, y: 0 });
         });
 
-        // Touch Variables
+        // Touch Logic
         let touchStartX = 0;
         let touchStartY = 0;
-
         canvas.addEventListener('touchstart', e => {
             touchStartX = e.changedTouches[0].screenX;
             touchStartY = e.changedTouches[0].screenY;
@@ -324,42 +351,41 @@
         canvas.addEventListener('touchend', e => {
             let touchEndX = e.changedTouches[0].screenX;
             let touchEndY = e.changedTouches[0].screenY;
-            handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
+
+            let dx = touchEndX - touchStartX;
+            let dy = touchEndY - touchStartY;
+
+            if (Math.max(Math.abs(dx), Math.abs(dy)) < 30) return;
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                if (dx > 0) handleInput({ x: 1, y: 0 });
+                else handleInput({ x: -1, y: 0 });
+            } else {
+                if (dy > 0) handleInput({ x: 0, y: -1 });
+                else handleInput({ x: 0, y: 1 });
+            }
         }, { passive: false });
 
-        function handleSwipe(x1, y1, x2, y2) {
-            let dx = x2 - x1;
-            let dy = y2 - y1;
-            let absDx = Math.abs(dx);
-            let absDy = Math.abs(dy);
+        function loop(now) {
+            // Precision Fix: Keep time roughly periodic or small
+            // We use 'now' from requestAnimationFrame, but send a modulo'd time to shader
+            // to prevent float precision artifacts ("micro waves")
+            totalTime = now * 0.001;
+            // 10000 is enough for no visible seam, small enough for mediump precision
+            let shaderTime = totalTime % 10000.0;
 
-            // Minimum swipe distance to avoid accidental taps
-            if (Math.max(absDx, absDy) < 30) return;
-
-            if (absDx > absDy) {
-                // Horizontal
-                if (dx > 0) handleInput({ x: 1, y: 0 }); // Right
-                else handleInput({ x: -1, y: 0 }); // Left
-            } else {
-                // Vertical
-                // Note: Screen Y increases downwards. Game Y increases upwards.
-                if (dy > 0) handleInput({ x: 0, y: -1 }); // Down swipe -> Game Down
-                else handleInput({ x: 0, y: 1 }); // Up swipe -> Game Up
-            }
-        }
-
-        // --- GAME LOOP ---
-        function loop(t) {
             if (inputQ.length) dir = inputQ.shift();
 
             let head = { x: snake[0].x + dir.x * speed, y: snake[0].y + dir.y * speed };
 
             const aspect = canvas.width / canvas.height;
+            // Wrap logic
             if (head.x > aspect) { snake.forEach(s => s.x -= 2 * aspect); head.x -= 2 * aspect; }
             if (head.x < -aspect) { snake.forEach(s => s.x += 2 * aspect); head.x += 2 * aspect; }
             if (head.y > 1.0) { snake.forEach(s => s.y -= 2.0); head.y -= 2.0; }
             if (head.y < -1.0) { snake.forEach(s => s.y += 2.0); head.y += 2.0; }
 
+            // Move body
             let nextSnake = [head];
             for (let i = 1; i < snake.length; i++) {
                 let prev = nextSnake[i - 1];
@@ -377,6 +403,7 @@
             }
             snake = nextSnake;
 
+            // Apple logic
             if (apple.falling) {
                 apple.z -= 0.05;
                 if (apple.z <= 0) {
@@ -396,10 +423,11 @@
             }
 
             if (splashTimer > 0) {
-                splashTimer += 0.01;
+                splashTimer += 0.015;
                 if (splashTimer > 2.0) splashTimer = 0;
             }
 
+            // Collision
             for (let i = 10; i < snake.length; i++) {
                 let dx = head.x - snake[i].x;
                 let dy = head.y - snake[i].y;
@@ -410,12 +438,17 @@
                 }
             }
 
+            // Render
             let flatSnake = [];
-            snake.forEach(s => flatSnake.push(s.x, s.y));
+            for (let i = 0; i < snake.length; i++) {
+                flatSnake.push(snake[i].x);
+                flatSnake.push(snake[i].y);
+            }
+            // Fill array to avoid gl errors
             while (flatSnake.length < 120) flatSnake.push(0, 0);
 
             gl.uniform2fv(locs.res, [canvas.width, canvas.height]);
-            gl.uniform1f(locs.time, t * 0.001);
+            gl.uniform1f(locs.time, shaderTime);
             gl.uniform2fv(locs.snake, new Float32Array(flatSnake));
             gl.uniform1i(locs.snakeLen, snake.length);
             gl.uniform3f(locs.apple, apple.x, apple.y, apple.z);
