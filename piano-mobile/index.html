@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Piano Scale & Chord Visualizer</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --text: #e0e0e0;
+            --white-key: #ffffff;
+            --black-key: #111111;
+            --highlight: #4ca1af;
+            --root-color: #e63946;
+            --chord-bg: #16213e;
+            --control-bg: #2c2c54;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px;
+            margin: 0;
+            overflow-x: hidden;
+            /* Prevent body scroll from key overflow */
+        }
+
+        h1 {
+            margin: 10px 0 20px 0;
+            font-size: 1.5rem;
+            text-align: center;
+        }
+
+        /* CONTROLS LAYOUT */
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 600px;
+            box-sizing: border-box;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        select {
+            padding: 12px;
+            font-size: 16px;
+            background-color: var(--control-bg);
+            color: white;
+            border: 1px solid var(--highlight);
+            border-radius: 5px;
+            cursor: pointer;
+            outline: none;
+            flex-grow: 1;
+        }
+
+        .btn-transpose {
+            padding: 12px 0;
+            width: 50px;
+            font-size: 20px;
+            font-weight: bold;
+            background-color: var(--control-bg);
+            color: var(--highlight);
+            border: 1px solid var(--highlight);
+            border-radius: 5px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-shrink: 0;
+            /* Prevent button squashing */
+        }
+
+        .btn-transpose:active {
+            background-color: var(--highlight);
+            color: white;
+        }
+
+        /* PIANO CONTAINER & SCROLLING */
+        .piano-wrapper {
+            width: 100%;
+            max-width: 840px;
+            overflow-x: auto;
+            /* Allow scrolling on mobile */
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            -webkit-overflow-scrolling: touch;
+            /* Smooth scroll iOS */
+        }
+
+        .piano-container {
+            position: relative;
+            height: 180px;
+            width: 840px;
+            /* Fixed internal width */
+            display: flex;
+            user-select: none;
+        }
+
+        .key {
+            position: relative;
+            box-sizing: border-box;
+            border-radius: 0 0 5px 5px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            padding-bottom: 10px;
+            font-weight: bold;
+            font-size: 14px;
+            color: #555;
+            transition: background-color 0.2s;
+        }
+
+        .white {
+            width: 60px;
+            height: 180px;
+            background-color: var(--white-key);
+            border: 1px solid #ccc;
+            z-index: 1;
+        }
+
+        .black {
+            width: 40px;
+            height: 110px;
+            background-color: var(--black-key);
+            color: #aaa;
+            position: absolute;
+            z-index: 2;
+            margin-left: -20px;
+            font-size: 12px;
+            padding-bottom: 8px;
+        }
+
+        /* HIGHLIGHT STATES */
+        .key.in-scale {
+            background-color: var(--highlight);
+            color: white;
+        }
+
+        .key.black.in-scale {
+            background-color: #2c7280;
+            color: white;
+        }
+
+        .key.root {
+            background-color: var(--root-color);
+            color: white;
+        }
+
+        .key.black.root {
+            background-color: #a82430;
+            color: white;
+        }
+
+        .key.chord-note {
+            background-color: #f1c40f !important;
+            color: black !important;
+        }
+
+        /* CHORDS SECTION */
+        .chords-container {
+            width: 100%;
+            max-width: 840px;
+        }
+
+        .chords-title {
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+            color: #888;
+        }
+
+        .chord-grid {
+            display: grid;
+            /* Adaptive Grid: 2 cols on mobile, 4 on tablet, 7 on desktop */
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 10px;
+        }
+
+        .chord-card {
+            background-color: var(--chord-bg);
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            user-select: none;
+            /* easier tapping */
+        }
+
+        .chord-card.active {
+            border-color: #f1c40f;
+            background-color: #252a40;
+            box-shadow: 0 0 10px rgba(241, 196, 15, 0.3);
+        }
+
+        .step-num {
+            font-size: 0.8em;
+            color: #888;
+        }
+
+        .chord-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: white;
+            margin: 2px 0;
+        }
+
+        .chord-notes {
+            font-size: 0.75em;
+            color: #aaa;
+        }
+
+        .chord-type {
+            font-size: 0.65em;
+            text-transform: uppercase;
+            color: #4ca1af;
+            margin-top: 4px;
+        }
+
+        /* Helper for scroll hint */
+        .scroll-hint {
+            display: none;
+            font-size: 0.8em;
+            color: #666;
+            text-align: center;
+            margin-bottom: 5px;
+        }
+
+        @media (max-width: 860px) {
+            .scroll-hint {
+                display: block;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Piano Scale & Chord</h1>
+
+    <div class="controls">
+        <div class="control-row">
+            <button class="btn-transpose" id="btn-prev">-</button>
+            <select id="root-note">
+                <option value="0">C</option>
+                <option value="1">C# / Db</option>
+                <option value="2">D</option>
+                <option value="3">D# / Eb</option>
+                <option value="4">E</option>
+                <option value="5">F</option>
+                <option value="6">F# / Gb</option>
+                <option value="7">G</option>
+                <option value="8">G# / Ab</option>
+                <option value="9">A</option>
+                <option value="10">A# / Bb</option>
+                <option value="11">B</option>
+            </select>
+            <button class="btn-transpose" id="btn-next">+</button>
+        </div>
+
+        <div class="control-row">
+            <select id="scale-type">
+                <option value="major">Major (Ionian)</option>
+                <option value="minor">Natural Minor (Aeolian)</option>
+                <option value="harmonic_minor">Harmonic Minor</option>
+                <option value="dorian">Dorian</option>
+                <option value="mixolydian">Mixolydian</option>
+                <option value="phrygian">Phrygian</option>
+                <option value="lydian">Lydian</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="scroll-hint">Swipe piano to see more &harr;</div>
+
+    <div class="piano-wrapper">
+        <div class="piano-container" id="piano"></div>
+    </div>
+
+    <div class="chords-container">
+        <div class="chords-title">Tap or Hover chord to visualize</div>
+        <div class="chord-grid" id="chord-grid">
+            <!-- Chords injected via JS -->
+        </div>
+    </div>
+
+    <script>
+        const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+        const SCALES = {
+            'major': [0, 2, 4, 5, 7, 9, 11],
+            'minor': [0, 2, 3, 5, 7, 8, 10],
+            'harmonic_minor': [0, 2, 3, 5, 7, 8, 11],
+            'dorian': [0, 2, 3, 5, 7, 9, 10],
+            'mixolydian': [0, 2, 4, 5, 7, 9, 10],
+            'phrygian': [0, 1, 3, 5, 7, 8, 10],
+            'lydian': [0, 2, 4, 6, 7, 9, 11]
+        };
+
+        const WHITE_KEYS = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23];
+        const BLACK_KEYS = [1, 3, 6, 8, 10, 13, 15, 18, 20, 22];
+
+        const pianoEl = document.getElementById('piano');
+        const chordGridEl = document.getElementById('chord-grid');
+        const rootSelect = document.getElementById('root-note');
+        const scaleSelect = document.getElementById('scale-type');
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+
+        // State for active clicked chord (mobile)
+        let activeChordIndex = -1;
+
+        function createPiano() {
+            WHITE_KEYS.forEach((noteValue, index) => {
+                const key = document.createElement('div');
+                key.classList.add('key', 'white');
+                key.dataset.note = noteValue % 12;
+                key.dataset.absolute = noteValue;
+                key.innerText = NOTE_NAMES[noteValue % 12];
+                pianoEl.appendChild(key);
+            });
+
+            const whiteKeyWidth = 60;
+            BLACK_KEYS.forEach(noteValue => {
+                const key = document.createElement('div');
+                key.classList.add('key', 'black');
+                key.dataset.note = noteValue % 12;
+                key.dataset.absolute = noteValue;
+                key.innerText = NOTE_NAMES[noteValue % 12];
+                let precedingWhiteKeys = WHITE_KEYS.filter(w => w < noteValue).length;
+                key.style.left = `${precedingWhiteKeys * whiteKeyWidth}px`;
+                pianoEl.appendChild(key);
+            });
+
+            // Clear selection on background click
+            pianoEl.addEventListener('click', (e) => {
+                if (e.target === pianoEl) clearChordSelection();
+            });
+        }
+
+        function getCurrentScale() {
+            const root = parseInt(rootSelect.value);
+            const scaleType = scaleSelect.value;
+            const intervals = SCALES[scaleType];
+            return intervals.map(interval => (root + interval) % 12);
+        }
+
+        function updatePiano(overrideNotes = null) {
+            const scaleNotes = getCurrentScale();
+            const rootNote = parseInt(rootSelect.value);
+
+            document.querySelectorAll('.key').forEach(key => {
+                key.classList.remove('in-scale', 'root', 'chord-note');
+                const note = parseInt(key.dataset.note);
+
+                // If we are showing a specific chord
+                if (overrideNotes) {
+                    if (overrideNotes.includes(note)) {
+                        key.classList.add('chord-note');
+                    }
+                } else {
+                    // Standard Scale View
+                    if (scaleNotes.includes(note)) {
+                        key.classList.add('in-scale');
+                    }
+                    if (note === rootNote) {
+                        key.classList.add('root');
+                    }
+                }
+            });
+        }
+
+        function updateChords() {
+            chordGridEl.innerHTML = '';
+            const root = parseInt(rootSelect.value);
+            const intervals = SCALES[scaleSelect.value];
+            const scaleAbs = intervals.map(i => root + i);
+
+            for (let i = 0; i < 7; i++) {
+                const rootIdx = i;
+                const thirdIdx = (i + 2) % 7;
+                const fifthIdx = (i + 4) % 7;
+
+                let n1 = scaleAbs[rootIdx];
+                let n2 = scaleAbs[thirdIdx] + (thirdIdx < rootIdx ? 12 : 0);
+                let n3 = scaleAbs[fifthIdx] + (fifthIdx < rootIdx ? 12 : 0);
+
+                const thirdInterval = n2 - n1;
+                const fifthInterval = n3 - n1;
+
+                let quality = "";
+                let suffix = "";
+                if (thirdInterval === 4 && fifthInterval === 7) { quality = "Major"; suffix = ""; }
+                else if (thirdInterval === 3 && fifthInterval === 7) { quality = "Minor"; suffix = "m"; }
+                else if (thirdInterval === 3 && fifthInterval === 6) { quality = "Dim"; suffix = "dim"; }
+                else if (thirdInterval === 4 && fifthInterval === 8) { quality = "Aug"; suffix = "aug"; }
+
+                const rootName = NOTE_NAMES[n1 % 12];
+                const thirdName = NOTE_NAMES[n2 % 12];
+                const fifthName = NOTE_NAMES[n3 % 12];
+
+                const card = document.createElement('div');
+                card.classList.add('chord-card');
+
+                let roman = ROMAN_NUMERALS[i];
+                if (quality === "Minor" || quality === "Dim") roman = roman.toLowerCase();
+                if (quality === "Dim") roman += "°";
+
+                card.innerHTML = `
+                    <div class="step-num">${roman}</div>
+                    <div class="chord-name">${rootName}${suffix}</div>
+                    <div class="chord-notes">${rootName} - ${thirdName} - ${fifthName}</div>
+                    <div class="chord-type">${quality}</div>
+                `;
+
+                // INTERACTION LOGIC
+                const chordNotes = [n1 % 12, n2 % 12, n3 % 12];
+
+                // Desktop Hover
+                card.addEventListener('mouseenter', () => {
+                    if (activeChordIndex === -1) updatePiano(chordNotes);
+                });
+                card.addEventListener('mouseleave', () => {
+                    if (activeChordIndex === -1) updatePiano(null);
+                });
+
+                // Mobile/Tablet Click
+                card.addEventListener('click', () => {
+                    // Toggle active state
+                    if (activeChordIndex === i) {
+                        clearChordSelection();
+                    } else {
+                        // Clear previous active card styling
+                        document.querySelectorAll('.chord-card').forEach(c => c.classList.remove('active'));
+
+                        activeChordIndex = i;
+                        card.classList.add('active');
+                        updatePiano(chordNotes);
+                    }
+                });
+
+                chordGridEl.appendChild(card);
+            }
+        }
+
+        function clearChordSelection() {
+            activeChordIndex = -1;
+            document.querySelectorAll('.chord-card').forEach(c => c.classList.remove('active'));
+            updatePiano(null);
+        }
+
+        function changeRoot(delta) {
+            let current = parseInt(rootSelect.value);
+            let next = (current + delta + 12) % 12;
+            rootSelect.value = next;
+            triggerUpdate();
+        }
+
+        function triggerUpdate() {
+            clearChordSelection();
+            updatePiano();
+            updateChords();
+        }
+
+        createPiano();
+        triggerUpdate();
+
+        rootSelect.addEventListener('change', triggerUpdate);
+        scaleSelect.addEventListener('change', triggerUpdate);
+        btnPrev.addEventListener('click', () => changeRoot(-1));
+        btnNext.addEventListener('click', () => changeRoot(1));
+
+    </script>
+</body>
+
+</html>
