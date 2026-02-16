@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piano Triads Trainer (Advanced)</title>
+    <style>
+        :root {
+            --bg-color: #1e293b;
+            --text-color: #f8fafc;
+            --white-key: #ffffff;
+            --black-key: #0f172a;
+            --key-active: #3b82f6;
+            --key-success: #22c55e;
+            --key-error: #ef4444;
+            --key-warn: #eab308;
+            --control-bg: #334155;
+            --tag-bg: #475569;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        /* Controls */
+        .controls {
+            background: var(--control-bg);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .options-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #475569;
+            padding-bottom: 20px;
+        }
+
+        .option-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .row-label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #94a3b8;
+            margin-right: 5px;
+            font-weight: bold;
+        }
+
+        label {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.95rem;
+        }
+
+        input[type="checkbox"] {
+            accent-color: var(--key-active);
+            transform: scale(1.1);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            border: none;
+            color: white;
+            padding: 10px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background: var(--key-active);
+        }
+
+        .btn-secondary {
+            background: #64748b;
+        }
+
+        .btn-exclude {
+            background: #d97706;
+        }
+
+        /* HUD */
+        .hud {
+            text-align: center;
+            margin-bottom: 20px;
+            min-height: 100px;
+        }
+
+        .target-chord {
+            font-size: 3rem;
+            font-weight: bold;
+            color: var(--key-active);
+            margin: 5px 0;
+            line-height: 1;
+        }
+
+        .sub-text {
+            font-size: 1.2rem;
+            color: #cbd5e1;
+            font-weight: normal;
+            margin-top: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+        }
+
+        .status-msg {
+            height: 24px;
+            color: #cbd5e1;
+            margin-top: 10px;
+            font-weight: 500;
+        }
+
+        /* PIANO */
+        .piano-wrapper {
+            display: flex;
+            justify-content: center;
+            padding: 10px;
+            background: #111;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            margin-bottom: 30px;
+        }
+
+        .piano-container {
+            position: relative;
+            height: 180px;
+            width: 560px;
+            background: #000;
+            display: flex;
+        }
+
+        .key {
+            cursor: pointer;
+            border-bottom-left-radius: 5px;
+            border-bottom-right-radius: 5px;
+            transition: background-color 0.1s;
+            box-sizing: border-box;
+        }
+
+        .key-white {
+            width: 40px;
+            height: 100%;
+            background: var(--white-key);
+            border: 1px solid #ccc;
+            border-top: none;
+            z-index: 1;
+            color: #94a3b8;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 10px;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+
+        .key-white:active,
+        .key-white.active {
+            background: linear-gradient(to bottom, #fff 0%, var(--key-active) 100%);
+        }
+
+        .key-black {
+            width: 24px;
+            height: 60%;
+            background: var(--black-key);
+            position: absolute;
+            z-index: 10;
+            top: 0;
+            border: 1px solid #333;
+            border-bottom-left-radius: 3px;
+            border-bottom-right-radius: 3px;
+        }
+
+        .key-black:active,
+        .key-black.active {
+            background: linear-gradient(to bottom, #222 0%, var(--key-active) 100%);
+        }
+
+        .key.correct {
+            background: var(--key-success) !important;
+        }
+
+        .key.wrong {
+            background: var(--key-error) !important;
+        }
+
+        .key.warn {
+            background: var(--key-warn) !important;
+        }
+
+        /* EXCLUDED LIST STYLES */
+        .exclusion-zone {
+            width: 100%;
+            max-width: 600px;
+            border-top: 1px solid #334155;
+            padding-top: 20px;
+        }
+
+        .exclusion-title {
+            font-size: 0.9rem;
+            color: #94a3b8;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .tag {
+            background: var(--tag-bg);
+            color: #e2e8f0;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: background 0.2s;
+        }
+
+        .tag:hover {
+            background: #ef4444;
+            text-decoration: line-through;
+        }
+
+        .tag span {
+            font-weight: bold;
+        }
+
+        @media (max-width: 650px) {
+            .piano-wrapper {
+                transform: scale(0.65);
+                margin-top: -20px;
+                margin-bottom: 0;
+            }
+
+            .target-chord {
+                font-size: 2.2rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Piano Triads Trainer</h1>
+
+    <div class="controls">
+
+        <div class="options-container">
+            <!-- Chord Types -->
+            <div class="option-row">
+                <span class="row-label">Types:</span>
+                <label><input type="checkbox" id="opt-major" checked> Major</label>
+                <label><input type="checkbox" id="opt-minor" checked> Minor</label>
+                <label><input type="checkbox" id="opt-dim"> Dim</label>
+                <label><input type="checkbox" id="opt-aug"> Aug</label>
+            </div>
+
+            <!-- Inversion Selection -->
+            <div class="option-row">
+                <span class="row-label">Inversions:</span>
+                <label><input type="checkbox" id="opt-inv-root" checked> Root</label>
+                <label><input type="checkbox" id="opt-inv-1st"> 1st</label>
+                <label><input type="checkbox" id="opt-inv-2nd"> 2nd</label>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button class="btn btn-primary" id="btn-skip">Skip / Next</button>
+            <button class="btn btn-secondary" id="btn-show">Show Answer</button>
+            <button class="btn btn-exclude" id="btn-exclude" title="Exclude this chord from future questions">
+                I know this (Exclude)
+            </button>
+        </div>
+    </div>
+
+    <div class="hud">
+        <div class="target-chord" id="display-chord">...</div>
+        <div class="status-msg" id="status-msg">Select 3 keys</div>
+    </div>
+
+    <div class="piano-wrapper">
+        <div class="piano-container" id="piano"></div>
+    </div>
+
+    <div class="exclusion-zone" id="exclusion-zone" style="display:none;">
+        <div class="exclusion-title">Excluded (Mastered) Chords - Click to Restore</div>
+        <div class="tags-container" id="excluded-list"></div>
+    </div>
+
+    <script>
+        /** CONSTANTS */
+        const NOTE_NAMES = [
+            ['C'], ['C♯', 'D♭'], ['D'], ['D♯', 'E♭'], ['E'], ['F'], ['F♯', 'G♭'],
+            ['G'], ['G♯', 'A♭'], ['A'], ['A♯', 'B♭'], ['B']
+        ];
+
+        const CHORD_TYPES = {
+            'Major': { label: '', intervals: [0, 4, 7] },
+            'Minor': { label: 'm', intervals: [0, 3, 7] },
+            'Diminished': { label: 'dim', intervals: [0, 3, 6] },
+            'Augmented': { label: 'aug', intervals: [0, 4, 8] }
+        };
+
+        const INVERSIONS = {
+            0: { name: "Root Position", bassIdx: 0 },
+            1: { name: "1st Inversion", bassIdx: 1 }, // Bass is 3rd
+            2: { name: "2nd Inversion", bassIdx: 2 }  // Bass is 5th
+        };
+
+        const START_OCTAVE = 3;
+        const NUM_OCTAVES = 2; // C3 to B4
+
+        /** STATE */
+        let currentTask = {
+            rootName: null,
+            rootIndex: null,
+            type: null,
+            inversion: 0,
+            id: null,
+            targetIndices: [],
+            targetBassIndex: 0
+        };
+
+        let pressedNotes = new Set();
+        let excludedChords = new Set();
+        let isFrozen = false;
+        let audioCtx = null;
+
+        /** DOM ELEMENTS */
+        const pianoEl = document.getElementById('piano');
+        const displayEl = document.getElementById('display-chord');
+        const statusEl = document.getElementById('status-msg');
+        const excludedListEl = document.getElementById('excluded-list');
+        const exclusionZoneEl = document.getElementById('exclusion-zone');
+
+        /** INITIALIZATION */
+        function initPiano() {
+            pianoEl.innerHTML = '';
+            let whiteKeyCount = 0;
+            const totalNotes = NUM_OCTAVES * 12;
+            const startMidi = START_OCTAVE * 12 + 12; // C3 = 48
+
+            for (let i = 0; i < totalNotes; i++) {
+                const midiVal = startMidi + i;
+                const noteIndex = midiVal % 12;
+                const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
+
+                const key = document.createElement('div');
+                key.dataset.note = midiVal;
+                key.classList.add('key');
+
+                if (isBlack) {
+                    key.classList.add('key-black');
+                    let leftPos = (whiteKeyCount * 40) - 12;
+                    if (noteIndex === 1) leftPos -= 2;
+                    if (noteIndex === 3) leftPos += 2;
+                    if (noteIndex === 6) leftPos -= 2;
+                    if (noteIndex === 10) leftPos += 2;
+                    key.style.left = `${leftPos}px`;
+                } else {
+                    key.classList.add('key-white');
+                    if (noteIndex === 0) key.textContent = 'C' + (Math.floor(midiVal / 12) - 1);
+                    whiteKeyCount++;
+                }
+
+                key.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    toggleKey(midiVal);
+                });
+                pianoEl.appendChild(key);
+            }
+        }
+
+        /** LOGIC */
+        function generateChord() {
+            pressedNotes.clear();
+            updateKeysVisual();
+            isFrozen = false;
+            statusEl.textContent = "Select 3 keys";
+            statusEl.style.color = "#cbd5e1";
+
+            // 1. Get Enabled Types
+            const enabledTypes = [];
+            if (document.getElementById('opt-major').checked) enabledTypes.push('Major');
+            if (document.getElementById('opt-minor').checked) enabledTypes.push('Minor');
+            if (document.getElementById('opt-dim').checked) enabledTypes.push('Diminished');
+            if (document.getElementById('opt-aug').checked) enabledTypes.push('Augmented');
+
+            // 2. Get Enabled Inversions
+            const enabledInversions = [];
+            if (document.getElementById('opt-inv-root').checked) enabledInversions.push(0);
+            if (document.getElementById('opt-inv-1st').checked) enabledInversions.push(1);
+            if (document.getElementById('opt-inv-2nd').checked) enabledInversions.push(2);
+
+            // Validation
+            if (enabledTypes.length === 0 || enabledInversions.length === 0) {
+                displayEl.innerHTML = "<span style='font-size:1.5rem'>Select options</span>";
+                statusEl.textContent = "Please select at least one Type and one Inversion";
+                return;
+            }
+
+            // 3. Build Candidate Pool
+            const candidatePool = [];
+            for (let rootIdx = 0; rootIdx < 12; rootIdx++) {
+                const names = NOTE_NAMES[rootIdx];
+                names.forEach(rootName => {
+                    enabledTypes.forEach(type => {
+                        const id = `${rootName}|${type}`;
+                        if (!excludedChords.has(id)) {
+                            candidatePool.push({ rootName, rootIndex: rootIdx, type, id });
+                        }
+                    });
+                });
+            }
+
+            if (candidatePool.length === 0) {
+                displayEl.textContent = "All Done!";
+                statusEl.textContent = "You've mastered all selected chords!";
+                statusEl.style.color = "var(--key-success)";
+                return;
+            }
+
+            // 4. Selections
+            const selection = candidatePool[Math.floor(Math.random() * candidatePool.length)];
+            const invId = enabledInversions[Math.floor(Math.random() * enabledInversions.length)];
+
+            const typeData = CHORD_TYPES[selection.type];
+            const invData = INVERSIONS[invId];
+
+            // 5. Calculate Data
+            const targetIndices = typeData.intervals.map(iv => (selection.rootIndex + iv) % 12);
+
+            // Target Bass: Interval index determines which note acts as bass
+            const bassInterval = typeData.intervals[invData.bassIdx];
+            const targetBassIndex = (selection.rootIndex + bassInterval) % 12;
+
+            // Display
+            let displayHTML = `${selection.rootName}${typeData.label}`;
+            displayHTML += `<br><div class='sub-text'>${invData.name}</div>`;
+
+            currentTask = {
+                rootName: selection.rootName,
+                rootIndex: selection.rootIndex,
+                type: selection.type,
+                inversion: invId,
+                id: selection.id,
+                targetIndices: targetIndices,
+                targetBassIndex: targetBassIndex
+            };
+
+            displayEl.innerHTML = displayHTML;
+        }
+
+        function toggleKey(midiVal) {
+            if (isFrozen || currentTask.rootIndex === null) return;
+
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            playTone(midiVal);
+
+            if (pressedNotes.has(midiVal)) {
+                pressedNotes.delete(midiVal);
+            } else {
+                pressedNotes.add(midiVal);
+            }
+
+            updateKeysVisual();
+            checkAnswer();
+        }
+
+        function updateKeysVisual() {
+            document.querySelectorAll('.key').forEach(k => {
+                const val = parseInt(k.dataset.note);
+                if (pressedNotes.has(val)) {
+                    k.classList.add('active');
+                } else {
+                    k.classList.remove('active');
+                    k.classList.remove('warn');
+                    k.classList.remove('wrong');
+                }
+            });
+        }
+
+        function checkAnswer() {
+            if (pressedNotes.size !== 3) return;
+
+            const pressedMidiSorted = Array.from(pressedNotes).sort((a, b) => a - b);
+            const pressedIndices = pressedMidiSorted.map(m => m % 12);
+            const targetIndicesSorted = [...currentTask.targetIndices].sort((a, b) => a - b);
+
+            // 1. Check notes
+            const hasCorrectNotes = JSON.stringify(pressedIndices.sort((a, b) => a - b)) === JSON.stringify(targetIndicesSorted);
+
+            if (!hasCorrectNotes) {
+                failSequence("Try again");
+                return;
+            }
+
+            // 2. Check Inversion (Bass Note)
+            const lowestPressedMidi = pressedMidiSorted[0];
+            const lowestPressedIndex = lowestPressedMidi % 12;
+
+            if (lowestPressedIndex !== currentTask.targetBassIndex) {
+                statusEl.textContent = "Right notes, wrong inversion. Check the bass note.";
+                statusEl.style.color = "var(--key-warn)";
+                document.querySelectorAll('.key.active').forEach(k => {
+                    k.classList.add('warn');
+                    setTimeout(() => k.classList.remove('warn'), 500);
+                });
+                return;
+            }
+
+            successSequence();
+        }
+
+        function successSequence() {
+            isFrozen = true;
+            statusEl.textContent = "Correct!";
+            statusEl.style.color = "var(--key-success)";
+
+            document.querySelectorAll('.key.active').forEach(k => k.classList.add('correct'));
+            playChord(Array.from(pressedNotes));
+
+            setTimeout(() => {
+                document.querySelectorAll('.key.correct').forEach(k => k.classList.remove('correct'));
+                generateChord();
+            }, 1200);
+        }
+
+        function failSequence(msg) {
+            statusEl.textContent = msg;
+            statusEl.style.color = "var(--key-error)";
+            document.querySelectorAll('.key.active').forEach(k => {
+                k.classList.add('wrong');
+                setTimeout(() => k.classList.remove('wrong'), 300);
+            });
+        }
+
+        function excludeCurrentChord() {
+            if (currentTask.rootIndex === null) return;
+            excludedChords.add(currentTask.id);
+            renderExcludedList();
+            generateChord();
+        }
+
+        function restoreChord(id) {
+            excludedChords.delete(id);
+            renderExcludedList();
+            if (displayEl.textContent === "All Done!") generateChord();
+        }
+
+        function renderExcludedList() {
+            excludedListEl.innerHTML = '';
+            if (excludedChords.size > 0) {
+                exclusionZoneEl.style.display = 'block';
+                excludedChords.forEach(id => {
+                    const [rootName, type] = id.split('|');
+                    const lbl = CHORD_TYPES[type].label;
+                    const tag = document.createElement('div');
+                    tag.className = 'tag';
+                    tag.innerHTML = `<span>${rootName}${lbl}</span> ×`;
+                    tag.onclick = () => restoreChord(id);
+                    excludedListEl.appendChild(tag);
+                });
+            } else {
+                exclusionZoneEl.style.display = 'none';
+            }
+        }
+
+        function showAnswer() {
+            if (currentTask.rootIndex === null) return;
+            pressedNotes.clear();
+
+            const typeData = CHORD_TYPES[currentTask.type];
+            const intervals = typeData.intervals;
+
+            // 1. Root Midi (C3 = 48)
+            let rootMidi = 48 + currentTask.rootIndex;
+
+            // 2. Base chord Midi values
+            let chordMidi = intervals.map(iv => rootMidi + iv);
+
+            // 3. Apply Inversion logic
+            if (currentTask.inversion === 1) {
+                // Move root (index 0) up octave
+                chordMidi[0] += 12;
+            } else if (currentTask.inversion === 2) {
+                // Move root and 3rd (index 0 and 1) up octave
+                chordMidi[0] += 12;
+                chordMidi[1] += 12;
+            }
+
+            // 4. Bound Check: if notes exceed B4 (71), shift whole chord down octave
+            // If that pushes it below C3, we might need more advanced logic, 
+            // but for this specific 2-octave keyboard, this simple check covers 99% of cases
+            if (Math.max(...chordMidi) > 71) {
+                chordMidi = chordMidi.map(n => n - 12);
+            }
+
+            chordMidi.forEach(n => pressedNotes.add(n));
+            updateKeysVisual();
+            checkAnswer();
+        }
+
+        /** AUDIO */
+        function playTone(midiNote, duration = 0.3) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
+
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playChord(notes) {
+            notes.sort((a, b) => a - b).forEach((note, i) => {
+                setTimeout(() => playTone(note, 0.8), i * 40);
+            });
+        }
+
+        /** LISTENERS */
+        document.getElementById('btn-skip').addEventListener('click', generateChord);
+        document.getElementById('btn-show').addEventListener('click', showAnswer);
+        document.getElementById('btn-exclude').addEventListener('click', excludeCurrentChord);
+
+        // All checkboxes trigger regenerate
+        const allChecks = document.querySelectorAll('input[type="checkbox"]');
+        allChecks.forEach(cb => {
+            cb.addEventListener('change', () => {
+                // Safety: ensure at least one type and one inv is checked
+                const types = document.querySelectorAll('.option-row:nth-child(1) input:checked');
+                const invs = document.querySelectorAll('.option-row:nth-child(2) input:checked');
+
+                // If user unchecks the last one, check it back immediately
+                if (types.length === 0 && cb.closest('.option-row:nth-child(1)')) cb.checked = true;
+                if (invs.length === 0 && cb.closest('.option-row:nth-child(2)')) cb.checked = true;
+
+                generateChord();
+            });
+        });
+
+        initPiano();
+        generateChord();
+
+    </script>
+</body>
+
+</html>

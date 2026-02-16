@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enharmonic Circle of Fifths</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --panel-bg: #252525;
+            --text-color: #eee;
+            --accent-color: #00d2ff;
+            --secondary-accent: #ff0055;
+            /* For the enharmonic split */
+            --slice-hover: #333;
+            --slice-active: #2c3e50;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+            font-weight: 300;
+        }
+
+        p.subtitle {
+            color: #888;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+        }
+
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 40px;
+            align-items: flex-start;
+        }
+
+        /* SVG Styles */
+        #circle-svg {
+            width: 450px;
+            height: 450px;
+            max-width: 95vw;
+            max-height: 95vw;
+            cursor: pointer;
+            filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.5));
+            user-select: none;
+        }
+
+        .slice {
+            fill: #2a2a2a;
+            stroke: #1a1a1a;
+            stroke-width: 2px;
+            transition: fill 0.2s ease;
+        }
+
+        .slice:hover {
+            fill: var(--slice-hover);
+        }
+
+        .slice.active {
+            fill: var(--slice-active);
+            stroke: var(--accent-color);
+        }
+
+        text {
+            font-family: sans-serif;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            pointer-events: none;
+            fill: #bbb;
+        }
+
+        text.major-label {
+            font-weight: bold;
+            fill: #fff;
+            font-size: 16px;
+        }
+
+        text.minor-label {
+            font-size: 11px;
+            fill: #888;
+        }
+
+        /* Enharmonic text specific */
+        tspan.split-top {
+            font-weight: bold;
+            fill: #fff;
+        }
+
+        tspan.split-bottom {
+            font-weight: bold;
+            fill: #ccc;
+            font-size: 0.9em;
+        }
+
+        /* Info Panel Styles */
+        .info-panel {
+            width: 320px;
+            background: var(--panel-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            min-height: 300px;
+        }
+
+        .single-view,
+        .split-view {
+            width: 100%;
+        }
+
+        /* Split view for enharmonics */
+        .split-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            border-top: 1px solid #444;
+            padding-top: 10px;
+        }
+
+        .split-col {
+            flex: 1;
+        }
+
+        .split-col:first-child {
+            border-right: 1px solid #444;
+        }
+
+        .key-title {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: var(--accent-color);
+            margin: 0;
+            line-height: 1;
+        }
+
+        .key-title.secondary {
+            font-size: 1.8rem;
+            color: #aaa;
+            margin-top: 10px;
+        }
+
+        .sig-display {
+            color: #888;
+            font-style: italic;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+
+        .scale-display {
+            margin: 10px 0;
+            line-height: 1.6;
+            text-align: left;
+            padding-left: 10px;
+        }
+
+        button#mute-btn {
+            margin-top: 20px;
+            background: transparent;
+            border: 1px solid #555;
+            color: #888;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button#mute-btn:hover {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        .note-badge {
+            display: inline-block;
+            background: #333;
+            padding: 3px 6px;
+            border-radius: 4px;
+            margin: 2px;
+            font-size: 0.85rem;
+            width: 22px;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Circle of Fifths</h1>
+    <p class="subtitle">Select a key to see Sharps, Flats, and Enharmonics</p>
+
+    <div class="container">
+        <!-- SVG Container -->
+        <svg id="circle-svg" viewBox="-120 -120 240 240"></svg>
+
+        <!-- Information Panel -->
+        <div class="info-panel" id="panel-content">
+            <!-- Content injected via JS -->
+        </div>
+    </div>
+
+    <script>
+        // --- DATA ---
+        // 'display' is what is shown on the wheel.
+        // 'data' contains the logic. If it's an array, it's an enharmonic split.
+        const circleData = [
+            { // 0 - C
+                display: "C",
+                minor: "Am",
+                data: [{ root: 'C', sig: '0', notes: ['C', 'D', 'E', 'F', 'G', 'A', 'B'] }]
+            },
+            { // 1 - G
+                display: "G",
+                minor: "Em",
+                data: [{ root: 'G', sig: '1♯', notes: ['G', 'A', 'B', 'C', 'D', 'E', 'F♯'] }]
+            },
+            { // 2 - D
+                display: "D",
+                minor: "Bm",
+                data: [{ root: 'D', sig: '2♯', notes: ['D', 'E', 'F♯', 'G', 'A', 'B', 'C♯'] }]
+            },
+            { // 3 - A
+                display: "A",
+                minor: "F♯m",
+                data: [{ root: 'A', sig: '3♯', notes: ['A', 'B', 'C♯', 'D', 'E', 'F♯', 'G♯'] }]
+            },
+            { // 4 - E
+                display: "E",
+                minor: "C♯m",
+                data: [{ root: 'E', sig: '4♯', notes: ['E', 'F♯', 'G♯', 'A', 'B', 'C♯', 'D♯'] }]
+            },
+            { // 5 - B / Cb (Enharmonic)
+                display: "B / C♭",
+                minor: "G♯m / A♭m",
+                data: [
+                    { root: 'B', sig: '5♯', notes: ['B', 'C♯', 'D♯', 'E', 'F♯', 'G♯', 'A♯'] },
+                    { root: 'C♭', sig: '7♭', notes: ['C♭', 'D♭', 'E♭', 'F♭', 'G♭', 'A♭', 'B♭'] }
+                ]
+            },
+            { // 6 - F# / Gb (Enharmonic)
+                display: "F♯ / G♭",
+                minor: "D♯m / E♭m",
+                data: [
+                    { root: 'F♯', sig: '6♯', notes: ['F♯', 'G♯', 'A♯', 'B', 'C♯', 'D♯', 'E♯'] },
+                    { root: 'G♭', sig: '6♭', notes: ['G♭', 'A♭', 'B♭', 'C♭', 'D♭', 'E♭', 'F'] }
+                ]
+            },
+            { // 7 - Db / C# (Enharmonic)
+                display: "D♭ / C♯",
+                minor: "B♭m / A♯m",
+                data: [
+                    { root: 'D♭', sig: '5♭', notes: ['D♭', 'E♭', 'F', 'G♭', 'A♭', 'B♭', 'C'] },
+                    { root: 'C♯', sig: '7♯', notes: ['C♯', 'D♯', 'E♯', 'F♯', 'G♯', 'A♯', 'B♯'] }
+                ]
+            },
+            { // 8 - Ab
+                display: "A♭",
+                minor: "Fm",
+                data: [{ root: 'A♭', sig: '4♭', notes: ['A♭', 'B♭', 'C', 'D♭', 'E♭', 'F', 'G'] }]
+            },
+            { // 9 - Eb
+                display: "E♭",
+                minor: "Cm",
+                data: [{ root: 'E♭', sig: '3♭', notes: ['E♭', 'F', 'G', 'A♭', 'B♭', 'C', 'D'] }]
+            },
+            { // 10 - Bb
+                display: "B♭",
+                minor: "Gm",
+                data: [{ root: 'B♭', sig: '2♭', notes: ['B♭', 'C', 'D', 'E♭', 'F', 'G', 'A'] }]
+            },
+            { // 11 - F
+                display: "F",
+                minor: "Dm",
+                data: [{ root: 'F', sig: '1♭', notes: ['F', 'G', 'A', 'B♭', 'C', 'D', 'E'] }]
+            }
+        ];
+
+        // Frequency Map (covering enharmonics)
+        const noteFreqs = {
+            'C': 261.63, 'B♯': 261.63,
+            'C♯': 277.18, 'D♭': 277.18,
+            'D': 293.66,
+            'D♯': 311.13, 'E♭': 311.13,
+            'E': 329.63, 'F♭': 329.63,
+            'F': 349.23, 'E♯': 349.23,
+            'F♯': 369.99, 'G♭': 369.99,
+            'G': 392.00,
+            'G♯': 415.30, 'A♭': 415.30,
+            'A': 440.00,
+            'A♯': 466.16, 'B♭': 466.16,
+            'B': 493.88, 'C♭': 493.88
+        };
+
+        // --- SETUP ---
+        const svg = document.getElementById('circle-svg');
+        const panelContent = document.getElementById('panel-content');
+
+        let isMuted = false;
+        let audioCtx = null;
+
+        // --- RENDER SVG ---
+        function createWheel() {
+            const radius = 100;
+            const holeRadius = 45;
+            const segmentAngle = (2 * Math.PI) / 12;
+
+            circleData.forEach((item, index) => {
+                // Rotate so C is at top (-90deg)
+                const startAngle = (index * segmentAngle) - (Math.PI / 2) - (segmentAngle / 2);
+                const endAngle = ((index + 1) * segmentAngle) - (Math.PI / 2) - (segmentAngle / 2);
+
+                // Path Calculations
+                const x1 = Math.cos(startAngle) * radius;
+                const y1 = Math.sin(startAngle) * radius;
+                const x2 = Math.cos(endAngle) * radius;
+                const y2 = Math.sin(endAngle) * radius;
+                const x3 = Math.cos(endAngle) * holeRadius;
+                const y3 = Math.sin(endAngle) * holeRadius;
+                const x4 = Math.cos(startAngle) * holeRadius;
+                const y4 = Math.sin(startAngle) * holeRadius;
+
+                const pathData = `M ${x3} ${y3} L ${x2} ${y2} A ${radius} ${radius} 0 0 0 ${x1} ${y1} L ${x4} ${y4} A ${holeRadius} ${holeRadius} 0 0 1 ${x3} ${y3} Z`;
+
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+                // Slice
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("d", pathData);
+                path.setAttribute("class", "slice");
+                path.addEventListener('click', () => selectKey(index));
+                g.appendChild(path);
+
+                // Text Labels
+                const midAngle = startAngle + (segmentAngle / 2);
+
+                // Handle Major Label (Split if enharmonic)
+                const textRadiusMaj = 80;
+                const txtXM = Math.cos(midAngle) * textRadiusMaj;
+                const txtYM = Math.sin(midAngle) * textRadiusMaj;
+
+                const textMaj = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                textMaj.setAttribute("class", "major-label");
+                textMaj.setAttribute("x", txtXM);
+                textMaj.setAttribute("y", txtYM);
+
+                if (item.display.includes('/')) {
+                    // Split logic (stacking them)
+                    const parts = item.display.split('/');
+                    const tspan1 = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+                    tspan1.textContent = parts[0].trim();
+                    tspan1.setAttribute("x", txtXM);
+                    tspan1.setAttribute("dy", "-0.4em");
+                    tspan1.setAttribute("class", "split-top");
+
+                    const tspan2 = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+                    tspan2.textContent = parts[1].trim();
+                    tspan2.setAttribute("x", txtXM);
+                    tspan2.setAttribute("dy", "1.2em");
+                    tspan2.setAttribute("class", "split-bottom");
+
+                    textMaj.appendChild(tspan1);
+                    textMaj.appendChild(tspan2);
+                } else {
+                    textMaj.textContent = item.display;
+                }
+                g.appendChild(textMaj);
+
+                // Minor Label (Small inner text)
+                const textRadiusMin = 56;
+                const txtXm = Math.cos(midAngle) * textRadiusMin;
+                const txtYm = Math.sin(midAngle) * textRadiusMin;
+                const textMin = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                textMin.setAttribute("x", txtXm);
+                textMin.setAttribute("y", txtYm);
+                textMin.textContent = item.minor.split('/')[0]; // Just show the first minor to save space
+                textMin.setAttribute("class", "minor-label");
+                g.appendChild(textMin);
+
+                svg.appendChild(g);
+            });
+        }
+
+        // --- UI UPDATE ---
+        function generateHtmlForScale(keyData) {
+            let sigText = keyData.sig === '0' ? "No sig" :
+                keyData.sig.includes('♯') ? `${keyData.sig.replace('♯', '')} Sharps` :
+                    `${keyData.sig.replace('♭', '')} Flats`;
+
+            let notesHtml = keyData.notes.map(n => `<span class="note-badge">${n}</span>`).join('');
+
+            return `
+            <div class="key-title">${keyData.root}</div>
+            <div class="sig-display">${sigText}</div>
+            <div class="scale-display">${notesHtml}</div>
+        `;
+        }
+
+        function selectKey(index) {
+            // Highlight Slice
+            const slices = document.querySelectorAll('.slice');
+            slices.forEach(s => s.classList.remove('active'));
+            slices[index].classList.add('active');
+
+            const item = circleData[index];
+            const isEnharmonic = item.data.length > 1;
+
+            // Build Panel HTML
+            let html = '';
+            if (!isEnharmonic) {
+                // Simple View
+                html = `
+                ${generateHtmlForScale(item.data[0])}
+                <div style="margin-top:20px; color:#888; font-size:0.9rem">
+                    Relative Minor: <strong>${item.minor}</strong>
+                </div>
+            `;
+                playChord(item.data[0].notes);
+            } else {
+                // Split View (Enharmonic)
+                html = `
+                <div style="font-size:1.2rem; color:#888; margin-bottom:10px;">Enharmonic Equivalents</div>
+                <div class="split-container">
+                    <div class="split-col">
+                        ${generateHtmlForScale(item.data[0])}
+                    </div>
+                    <div class="split-col">
+                        ${generateHtmlForScale(item.data[1])}
+                    </div>
+                </div>
+                <div style="margin-top:15px; color:#888; font-size:0.9rem">
+                    Relative Minors: ${item.minor}
+                </div>
+            `;
+                // Play sound using first dataset (frequencies are identical)
+                playChord(item.data[0].notes);
+            }
+
+            // Add Mute Button
+            html += `<button id="mute-btn">${isMuted ? "Sound: OFF" : "Sound: ON"}</button>`;
+
+            panelContent.innerHTML = html;
+
+            // Re-attach mute listener because we wiped the HTML
+            document.getElementById('mute-btn').addEventListener('click', toggleMute);
+        }
+
+        // --- AUDIO ENGINE ---
+        function toggleMute() {
+            isMuted = !isMuted;
+            const btn = document.getElementById('mute-btn');
+            if (btn) btn.textContent = isMuted ? "Sound: OFF" : "Sound: ON";
+        }
+
+        function playChord(notes) {
+            if (isMuted) return;
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+            const chordIndices = [0, 2, 4]; // Root, 3rd, 5th
+            const now = audioCtx.currentTime;
+
+            chordIndices.forEach(i => {
+                const noteName = notes[i];
+                const freq = noteFreqs[noteName];
+
+                if (freq) {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+
+                    // Soft envelope
+                    gain.gain.setValueAtTime(0, now);
+                    gain.gain.linearRampToValueAtTime(0.1, now + 0.05);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 1.2);
+                }
+            });
+        }
+
+        // --- INIT ---
+        createWheel();
+        selectKey(0); // Start at C
+
+    </script>
+</body>
+
+</html>
