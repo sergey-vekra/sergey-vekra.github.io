@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Piano Triads Trainer (Mobile Optimized)</title>
+    <title>Piano Triads Trainer (Mobile + Options)</title>
     <style>
         :root {
             --bg-color: #1e293b;
@@ -56,7 +56,7 @@
         .options-container {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
             margin-bottom: 15px;
             border-bottom: 1px solid #475569;
             padding-bottom: 15px;
@@ -71,11 +71,13 @@
         }
 
         .row-label {
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 1px;
             color: #94a3b8;
             font-weight: bold;
+            min-width: 50px;
+            text-align: right;
         }
 
         label {
@@ -167,7 +169,6 @@
             border-radius: 8px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
             margin-bottom: 20px;
-            /* Prevent scrolling when touching piano */
             touch-action: none;
         }
 
@@ -182,8 +183,8 @@
 
         /* KEY STYLES */
         .key {
-            /* Important: Keys ignore pointer events so the container handles the logic */
             pointer-events: none;
+            /* Logic handled by container */
             border-bottom-left-radius: 5px;
             border-bottom-right-radius: 5px;
             box-sizing: border-box;
@@ -213,7 +214,6 @@
         .key-black {
             width: 24px;
             height: 60%;
-            /* 108px */
             background: var(--black-key);
             position: absolute;
             z-index: 10;
@@ -279,7 +279,6 @@
 
         @media (max-width: 650px) {
             .piano-wrapper {
-                /* Scale down for mobile */
                 transform: scale(0.62);
                 margin-top: -30px;
                 margin-bottom: -20px;
@@ -299,10 +298,19 @@
 
 <body>
 
-    <h1>Piano Triads Trainer (v2)</h1>
+    <h1>Piano Triads Trainer</h1>
 
     <div class="controls">
         <div class="options-container">
+
+            <!-- Root Notes (Naturals vs Accidentals) -->
+            <div class="option-row">
+                <span class="row-label">Roots:</span>
+                <label><input type="checkbox" id="opt-root-naturals" checked> Naturals (C, D...)</label>
+                <label><input type="checkbox" id="opt-root-accidentals" checked> Accidentals (C♯, B♭...)</label>
+            </div>
+
+            <!-- Chord Qualities -->
             <div class="option-row">
                 <span class="row-label">Type:</span>
                 <label><input type="checkbox" id="opt-major" checked> Maj</label>
@@ -310,6 +318,8 @@
                 <label><input type="checkbox" id="opt-dim"> Dim</label>
                 <label><input type="checkbox" id="opt-aug"> Aug</label>
             </div>
+
+            <!-- Inversions -->
             <div class="option-row">
                 <span class="row-label">Inv:</span>
                 <label><input type="checkbox" id="opt-inv-root" checked> Root</label>
@@ -370,7 +380,7 @@
         let excludedChords = new Set();
         let isFrozen = false;
         let audioCtx = null;
-        let blackKeyZones = []; // Stores hitboxes for black keys
+        let blackKeyZones = [];
 
         /** DOM ELEMENTS */
         const pianoEl = document.getElementById('piano');
@@ -400,20 +410,13 @@
                 if (isBlack) {
                     key.classList.add('key-black');
                     let leftPos = (whiteKeyCount * WHITE_KEY_WIDTH) - 12;
-                    // Visual Tuning
                     if (noteIndex === 1) leftPos -= 2;
                     if (noteIndex === 3) leftPos += 2;
                     if (noteIndex === 6) leftPos -= 2;
                     if (noteIndex === 10) leftPos += 2;
 
                     key.style.left = `${leftPos}px`;
-
-                    // Store logic hitbox (Center X)
-                    // Black key is 24px wide. Center is left + 12.
-                    blackKeyZones.push({
-                        midi: midiVal,
-                        centerX: leftPos + 12
-                    });
+                    blackKeyZones.push({ midi: midiVal, centerX: leftPos + 12 });
                 } else {
                     key.classList.add('key-white');
                     if (noteIndex === 0) key.textContent = 'C' + (Math.floor(midiVal / 12) - 1);
@@ -422,7 +425,6 @@
                 pianoEl.appendChild(key);
             }
 
-            // Attach global input handler to container instead of individual keys
             attachInputHandlers();
         }
 
@@ -430,21 +432,10 @@
         function attachInputHandlers() {
             const handleInput = (e) => {
                 if (isFrozen) return;
-                e.preventDefault(); // Prevent scroll/zoom
-
-                // Handle multi-touch or single mouse
+                e.preventDefault();
                 const points = e.touches ? e.touches : [e];
-
-                // To support sliding, we process the first touch point generally
-                // But let's keep it simple: Just take the primary interaction
                 const touch = points[0];
                 const rect = pianoEl.getBoundingClientRect();
-
-                // Coordinates relative to piano container (scaled)
-                // We need to account for CSS transform scaling if necessary, but
-                // getBoundingClientRect usually handles the visual size.
-                // However, the internal coordinate system is fixed (560x180).
-                // We need to map visual click X/Y to internal 560x180 space.
 
                 const scaleX = 560 / rect.width;
                 const scaleY = 180 / rect.height;
@@ -455,67 +446,42 @@
                 processHit(x, y);
             };
 
-            // Mouse
             pianoEl.addEventListener('mousedown', handleInput);
-            // Touch
             pianoEl.addEventListener('touchstart', handleInput);
-
-            // Optional: Drag support (Glissando)
-            // Only trigger if we move significantly to a new key, 
-            // avoiding rapid toggling on boundary.
-            // For a triad trainer, tap is safer, but let's enable simple drag.
-            pianoEl.addEventListener('mousemove', (e) => {
-                if (e.buttons === 1) handleInput(e);
-            });
+            // Glissando support
+            pianoEl.addEventListener('mousemove', (e) => { if (e.buttons === 1) handleInput(e); });
             pianoEl.addEventListener('touchmove', handleInput);
         }
 
         function processHit(x, y) {
             let detectedMidi = -1;
 
-            // ZONE LOGIC
-            // 1. Check if Y is in Top Half (Black key area)
+            // Top half favors black keys with magnet
             if (y < BLACK_KEY_HEIGHT) {
-                // We are in the top part. Prefer Black keys.
-                // Check proximity to black key centers.
-                // Standard black key width 24px (radius 12px). 
-                // Let's add "Magnet" padding: radius 18px (36px total width).
                 const magnetRadius = 18;
-
                 const nearestBlack = blackKeyZones.find(z => Math.abs(z.centerX - x) < magnetRadius);
-
                 if (nearestBlack) {
                     detectedMidi = nearestBlack.midi;
                 } else {
-                    // In top half, but far from a black key -> It's the white key underneath
-                    // White key index = floor(x / 40)
                     const whiteIdx = Math.floor(x / WHITE_KEY_WIDTH);
                     detectedMidi = getWhiteKeyMidi(whiteIdx);
                 }
             } else {
-                // 2. Bottom part. STRICTLY White keys.
+                // Bottom half strict white keys
                 const whiteIdx = Math.floor(x / WHITE_KEY_WIDTH);
                 detectedMidi = getWhiteKeyMidi(whiteIdx);
             }
 
             if (detectedMidi !== -1) {
-                // Debounce: don't toggle if we are dragging on the same key
-                // For simple tap, this acts immediately.
                 toggleKey(detectedMidi);
             }
         }
 
-        // Helper to map 0..13 index to MIDI notes (skipping black keys)
         function getWhiteKeyMidi(index) {
-            // Map of white key index to offset from C
-            // 0=C, 1=D, 2=E, 3=F, 4=G, 5=A, 6=B
-            const scale = [0, 2, 4, 5, 7, 9, 11];
+            const scale = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B
             if (index < 0 || index >= 14) return -1;
-
             const octave = Math.floor(index / 7);
             const step = index % 7;
-
-            // Start Midi is 48 (C3)
             const startMidi = START_OCTAVE * 12 + 12;
             return startMidi + (octave * 12) + scale[step];
         }
@@ -528,6 +494,10 @@
             statusEl.textContent = "Select 3 keys";
             statusEl.style.color = "#cbd5e1";
 
+            // Gather Options
+            const useNaturals = document.getElementById('opt-root-naturals').checked;
+            const useAccidentals = document.getElementById('opt-root-accidentals').checked;
+
             const enabledTypes = [];
             if (document.getElementById('opt-major').checked) enabledTypes.push('Major');
             if (document.getElementById('opt-minor').checked) enabledTypes.push('Minor');
@@ -539,13 +509,25 @@
             if (document.getElementById('opt-inv-1st').checked) enabledInversions.push(1);
             if (document.getElementById('opt-inv-2nd').checked) enabledInversions.push(2);
 
+            // Validation
+            if (!useNaturals && !useAccidentals) {
+                displayEl.innerHTML = "<span style='font-size:1.5rem'>Select Root Type</span>";
+                return;
+            }
             if (enabledTypes.length === 0 || enabledInversions.length === 0) {
                 displayEl.innerHTML = "<span style='font-size:1.5rem'>Select options</span>";
                 return;
             }
 
+            // Build Pool
             const candidatePool = [];
             for (let rootIdx = 0; rootIdx < 12; rootIdx++) {
+                // Filter by Root Type
+                const isBlackKey = [1, 3, 6, 8, 10].includes(rootIdx);
+
+                if (isBlackKey && !useAccidentals) continue;
+                if (!isBlackKey && !useNaturals) continue;
+
                 const names = NOTE_NAMES[rootIdx];
                 names.forEach(rootName => {
                     enabledTypes.forEach(type => {
@@ -564,6 +546,7 @@
                 return;
             }
 
+            // Select
             const selection = candidatePool[Math.floor(Math.random() * candidatePool.length)];
             const invId = enabledInversions[Math.floor(Math.random() * enabledInversions.length)];
             const typeData = CHORD_TYPES[selection.type];
@@ -589,16 +572,12 @@
             displayEl.innerHTML = displayHTML;
         }
 
-        // Stores the last key toggled to prevent rapid flickering during Drag
         let lastToggledMidi = -1;
         let dragTimeout = null;
 
         function toggleKey(midiVal) {
-            // If we just processed this note, ignore (debounce for drag)
             if (midiVal === lastToggledMidi) return;
             lastToggledMidi = midiVal;
-
-            // Clear debounce after a moment
             clearTimeout(dragTimeout);
             dragTimeout = setTimeout(() => { lastToggledMidi = -1; }, 200);
 
@@ -618,12 +597,9 @@
         }
 
         function updateKeysVisual() {
-            // Reset classes
             document.querySelectorAll('.key').forEach(k => {
                 k.classList.remove('active', 'warn', 'wrong', 'correct');
             });
-
-            // Apply active class
             pressedNotes.forEach(midi => {
                 const el = document.getElementById(`key-${midi}`);
                 if (el) el.classList.add('active');
@@ -644,7 +620,6 @@
                 return;
             }
 
-            // Check Bass
             const lowestPressedIndex = pressedMidiSorted[0] % 12;
             if (lowestPressedIndex !== currentTask.targetBassIndex) {
                 statusEl.textContent = "Right notes, wrong inversion. Check bass.";
@@ -663,13 +638,9 @@
             isFrozen = true;
             statusEl.textContent = "Correct!";
             statusEl.style.color = "var(--key-success)";
-
             pressedNotes.forEach(midi => document.getElementById(`key-${midi}`).classList.add('correct'));
             playChord(Array.from(pressedNotes));
-
-            setTimeout(() => {
-                generateChord();
-            }, 1200);
+            setTimeout(() => { generateChord(); }, 1200);
         }
 
         function failSequence(msg) {
@@ -725,7 +696,6 @@
             else if (currentTask.inversion === 2) { chordMidi[0] += 12; chordMidi[1] += 12; }
 
             if (Math.max(...chordMidi) > 71) chordMidi = chordMidi.map(n => n - 12);
-
             chordMidi.forEach(n => pressedNotes.add(n));
             updateKeysVisual();
             checkAnswer();
@@ -737,12 +707,10 @@
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
-
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
             gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-
             osc.connect(gain);
             gain.connect(audioCtx.destination);
             osc.start();
@@ -762,12 +730,12 @@
 
         document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
             cb.addEventListener('change', () => {
-                const types = document.querySelectorAll('.option-row:nth-child(1) input:checked');
-                const invs = document.querySelectorAll('.option-row:nth-child(2) input:checked');
-
-                if (types.length === 0 && cb.closest('.option-row:nth-child(1)')) cb.checked = true;
-                if (invs.length === 0 && cb.closest('.option-row:nth-child(2)')) cb.checked = true;
-
+                // Helper to prevent unchecking all options in a row
+                const row = cb.closest('.option-row');
+                if (row) {
+                    const checkedInRow = row.querySelectorAll('input:checked');
+                    if (checkedInRow.length === 0) cb.checked = true;
+                }
                 generateChord();
             });
         });
