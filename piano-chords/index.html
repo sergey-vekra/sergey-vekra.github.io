@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Piano Triads Trainer (Mobile + Options)</title>
+    <title>Piano Triads Trainer (Fluid Layout)</title>
     <style>
         :root {
             --bg-color: #1e293b;
@@ -66,7 +66,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 10px;
+            gap: 8px;
             flex-wrap: wrap;
         }
 
@@ -84,8 +84,9 @@
             cursor: pointer;
             display: flex;
             align-items: center;
-            gap: 4px;
-            font-size: 0.9rem;
+            gap: 3px;
+            font-size: 0.85rem;
+            white-space: nowrap;
         }
 
         input[type="checkbox"] {
@@ -103,10 +104,11 @@
         .btn {
             border: none;
             color: white;
-            padding: 10px 14px;
+            padding: 12px 16px;
+            /* Larger tap targets */
             border-radius: 5px;
             cursor: pointer;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             transition: opacity 0.2s;
             touch-action: manipulation;
         }
@@ -160,42 +162,51 @@
             font-size: 0.9rem;
         }
 
-        /* PIANO WRAPPER */
+        /* PIANO WRAPPER (Fluid) */
         .piano-wrapper {
+            width: 100%;
+            max-width: 800px;
+            /* Max desktop width */
+            padding: 0 10px;
+            /* Min padding */
+            box-sizing: border-box;
             display: flex;
             justify-content: center;
-            padding: 10px;
-            background: #111;
-            border-radius: 8px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
             margin-bottom: 20px;
-            touch-action: none;
         }
 
         .piano-container {
             position: relative;
-            height: 180px;
-            width: 560px;
+            width: 100%;
+            /* Fill available space */
+            /* Height is responsive based on width to maintain aspect ratio feel */
+            height: clamp(140px, 28vw, 220px);
             background: #000;
             display: flex;
             cursor: pointer;
+            border-radius: 6px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            /* Prevent scrolling while playing */
+            touch-action: none;
+            overflow: hidden;
         }
 
         /* KEY STYLES */
         .key {
             pointer-events: none;
-            /* Logic handled by container */
-            border-bottom-left-radius: 5px;
-            border-bottom-right-radius: 5px;
+            /* Container handles input */
+            border-bottom-left-radius: 4px;
+            border-bottom-right-radius: 4px;
             box-sizing: border-box;
             transition: background-color 0.05s;
         }
 
         .key-white {
-            width: 40px;
+            flex: 1;
+            /* Distribute equal width */
             height: 100%;
             background: var(--white-key);
-            border: 1px solid #ccc;
+            border: 1px solid #94a3b8;
             border-top: none;
             z-index: 1;
             color: #94a3b8;
@@ -203,8 +214,7 @@
             align-items: flex-end;
             justify-content: center;
             padding-bottom: 10px;
-            font-size: 0.8rem;
-            flex-shrink: 0;
+            font-size: 0.7rem;
         }
 
         .key-white.active {
@@ -212,7 +222,11 @@
         }
 
         .key-black {
-            width: 24px;
+            /* Width relative to container. 
+               14 white keys. 1 white key approx 7.14%. 
+               Black key usually 60% of white key width. 
+               Let's say 4.5% of total container width. */
+            width: 4.5%;
             height: 60%;
             background: var(--black-key);
             position: absolute;
@@ -276,41 +290,22 @@
         .tag span {
             font-weight: bold;
         }
-
-        @media (max-width: 650px) {
-            .piano-wrapper {
-                transform: scale(0.62);
-                margin-top: -30px;
-                margin-bottom: -20px;
-            }
-
-            .controls {
-                padding: 10px;
-            }
-
-            .btn {
-                padding: 8px 12px;
-                font-size: 0.8rem;
-            }
-        }
     </style>
 </head>
 
 <body>
 
-    <h1>Piano Triads Trainer</h1>
+    <h1>Piano Triads Trainer (v3)</h1>
 
     <div class="controls">
         <div class="options-container">
 
-            <!-- Root Notes (Naturals vs Accidentals) -->
             <div class="option-row">
                 <span class="row-label">Roots:</span>
-                <label><input type="checkbox" id="opt-root-naturals" checked> Naturals (C, D...)</label>
-                <label><input type="checkbox" id="opt-root-accidentals" checked> Accidentals (C♯, B♭...)</label>
+                <label><input type="checkbox" id="opt-root-naturals" checked> Natural</label>
+                <label><input type="checkbox" id="opt-root-accidentals" checked> Accidental</label>
             </div>
 
-            <!-- Chord Qualities -->
             <div class="option-row">
                 <span class="row-label">Type:</span>
                 <label><input type="checkbox" id="opt-major" checked> Maj</label>
@@ -319,7 +314,6 @@
                 <label><input type="checkbox" id="opt-aug"> Aug</label>
             </div>
 
-            <!-- Inversions -->
             <div class="option-row">
                 <span class="row-label">Inv:</span>
                 <label><input type="checkbox" id="opt-inv-root" checked> Root</label>
@@ -371,8 +365,7 @@
 
         const START_OCTAVE = 3;
         const NUM_OCTAVES = 2; // C3 to B4
-        const WHITE_KEY_WIDTH = 40;
-        const BLACK_KEY_HEIGHT = 108; // 60% of 180px
+        const NUM_WHITE_KEYS = 14;
 
         /** STATE */
         let currentTask = { rootName: null, rootIndex: null, type: null, inversion: 0, id: null, targetIndices: [], targetBassIndex: 0 };
@@ -380,7 +373,7 @@
         let excludedChords = new Set();
         let isFrozen = false;
         let audioCtx = null;
-        let blackKeyZones = [];
+        let blackKeyZones = []; // Stores PERCENTAGE centers
 
         /** DOM ELEMENTS */
         const pianoEl = document.getElementById('piano');
@@ -397,6 +390,9 @@
             const totalNotes = NUM_OCTAVES * 12;
             const startMidi = START_OCTAVE * 12 + 12; // C3 = 48
 
+            // Calculate percentage width of one white key
+            const wkPercent = 100 / NUM_WHITE_KEYS;
+
             for (let i = 0; i < totalNotes; i++) {
                 const midiVal = startMidi + i;
                 const noteIndex = midiVal % 12;
@@ -409,14 +405,25 @@
 
                 if (isBlack) {
                     key.classList.add('key-black');
-                    let leftPos = (whiteKeyCount * WHITE_KEY_WIDTH) - 12;
-                    if (noteIndex === 1) leftPos -= 2;
-                    if (noteIndex === 3) leftPos += 2;
-                    if (noteIndex === 6) leftPos -= 2;
-                    if (noteIndex === 10) leftPos += 2;
 
-                    key.style.left = `${leftPos}px`;
-                    blackKeyZones.push({ midi: midiVal, centerX: leftPos + 12 });
+                    // Position based on previous white keys
+                    // Standard offset: center of the gap between white keys
+                    let leftPercent = (whiteKeyCount * wkPercent);
+
+                    // Visual Tuning (Percentage bumps)
+                    if (noteIndex === 1) leftPercent -= (wkPercent * 0.35); // C# closer to C
+                    else if (noteIndex === 3) leftPercent -= (wkPercent * 0.15); // D# slightly left
+                    else if (noteIndex === 6) leftPercent -= (wkPercent * 0.35); // F#
+                    else if (noteIndex === 8) leftPercent -= (wkPercent * 0.25); // G#
+                    else if (noteIndex === 10) leftPercent -= (wkPercent * 0.15); // A#
+
+                    key.style.left = `${leftPercent}%`;
+
+                    // Store hit zone center (as percentage of container width 0.0 - 1.0)
+                    // Black key is 4.5% wide. Center is left + 2.25%
+                    const centerP = (leftPercent + 2.25) / 100;
+                    blackKeyZones.push({ midi: midiVal, center: centerP });
+
                 } else {
                     key.classList.add('key-white');
                     if (noteIndex === 0) key.textContent = 'C' + (Math.floor(midiVal / 12) - 1);
@@ -428,7 +435,7 @@
             attachInputHandlers();
         }
 
-        /** INPUT HANDLING (Mobile Optimized) */
+        /** INPUT HANDLING (Fluid/Responsive) */
         function attachInputHandlers() {
             const handleInput = (e) => {
                 if (isFrozen) return;
@@ -437,39 +444,47 @@
                 const touch = points[0];
                 const rect = pianoEl.getBoundingClientRect();
 
-                const scaleX = 560 / rect.width;
-                const scaleY = 180 / rect.height;
+                // Get click position relative to container
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
 
-                const x = (touch.clientX - rect.left) * scaleX;
-                const y = (touch.clientY - rect.top) * scaleY;
+                // Normalized X (0.0 to 1.0)
+                const xPercent = x / rect.width;
 
-                processHit(x, y);
+                // Detect vertical zone
+                // Top 60% of container is where black keys live
+                const blackKeyAreaHeight = rect.height * 0.6;
+
+                processHit(xPercent, y, blackKeyAreaHeight);
             };
 
             pianoEl.addEventListener('mousedown', handleInput);
             pianoEl.addEventListener('touchstart', handleInput);
-            // Glissando support
             pianoEl.addEventListener('mousemove', (e) => { if (e.buttons === 1) handleInput(e); });
             pianoEl.addEventListener('touchmove', handleInput);
         }
 
-        function processHit(x, y) {
+        function processHit(xPercent, y, boundaryY) {
             let detectedMidi = -1;
 
-            // Top half favors black keys with magnet
-            if (y < BLACK_KEY_HEIGHT) {
-                const magnetRadius = 18;
-                const nearestBlack = blackKeyZones.find(z => Math.abs(z.centerX - x) < magnetRadius);
+            // Top half favors black keys
+            if (y < boundaryY) {
+                // Check distance to closest black key center (percentage)
+                // 4.5% width means approx +/- 2.25% radius.
+                // Let's add magnet: look for +/- 3.5%
+                const magnetRadius = 0.035;
+
+                const nearestBlack = blackKeyZones.find(z => Math.abs(z.center - xPercent) < magnetRadius);
+
                 if (nearestBlack) {
                     detectedMidi = nearestBlack.midi;
                 } else {
-                    const whiteIdx = Math.floor(x / WHITE_KEY_WIDTH);
-                    detectedMidi = getWhiteKeyMidi(whiteIdx);
+                    // Fallback to white key underneath
+                    detectedMidi = getWhiteKeyMidi(xPercent);
                 }
             } else {
                 // Bottom half strict white keys
-                const whiteIdx = Math.floor(x / WHITE_KEY_WIDTH);
-                detectedMidi = getWhiteKeyMidi(whiteIdx);
+                detectedMidi = getWhiteKeyMidi(xPercent);
             }
 
             if (detectedMidi !== -1) {
@@ -477,9 +492,13 @@
             }
         }
 
-        function getWhiteKeyMidi(index) {
-            const scale = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B
+        function getWhiteKeyMidi(xPercent) {
+            // Calculate index (0 to 13)
+            const index = Math.floor(xPercent * NUM_WHITE_KEYS);
+
+            const scale = [0, 2, 4, 5, 7, 9, 11];
             if (index < 0 || index >= 14) return -1;
+
             const octave = Math.floor(index / 7);
             const step = index % 7;
             const startMidi = START_OCTAVE * 12 + 12;
@@ -494,7 +513,6 @@
             statusEl.textContent = "Select 3 keys";
             statusEl.style.color = "#cbd5e1";
 
-            // Gather Options
             const useNaturals = document.getElementById('opt-root-naturals').checked;
             const useAccidentals = document.getElementById('opt-root-accidentals').checked;
 
@@ -509,9 +527,8 @@
             if (document.getElementById('opt-inv-1st').checked) enabledInversions.push(1);
             if (document.getElementById('opt-inv-2nd').checked) enabledInversions.push(2);
 
-            // Validation
             if (!useNaturals && !useAccidentals) {
-                displayEl.innerHTML = "<span style='font-size:1.5rem'>Select Root Type</span>";
+                displayEl.innerHTML = "<span style='font-size:1.5rem'>Select Roots</span>";
                 return;
             }
             if (enabledTypes.length === 0 || enabledInversions.length === 0) {
@@ -519,12 +536,9 @@
                 return;
             }
 
-            // Build Pool
             const candidatePool = [];
             for (let rootIdx = 0; rootIdx < 12; rootIdx++) {
-                // Filter by Root Type
                 const isBlackKey = [1, 3, 6, 8, 10].includes(rootIdx);
-
                 if (isBlackKey && !useAccidentals) continue;
                 if (!isBlackKey && !useNaturals) continue;
 
@@ -546,7 +560,6 @@
                 return;
             }
 
-            // Select
             const selection = candidatePool[Math.floor(Math.random() * candidatePool.length)];
             const invId = enabledInversions[Math.floor(Math.random() * enabledInversions.length)];
             const typeData = CHORD_TYPES[selection.type];
@@ -579,7 +592,7 @@
             if (midiVal === lastToggledMidi) return;
             lastToggledMidi = midiVal;
             clearTimeout(dragTimeout);
-            dragTimeout = setTimeout(() => { lastToggledMidi = -1; }, 200);
+            dragTimeout = setTimeout(() => { lastToggledMidi = -1; }, 150);
 
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -730,7 +743,6 @@
 
         document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
             cb.addEventListener('change', () => {
-                // Helper to prevent unchecking all options in a row
                 const row = cb.closest('.option-row');
                 if (row) {
                     const checkedInRow = row.querySelectorAll('input:checked');
