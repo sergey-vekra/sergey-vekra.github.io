@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Piano Triads Trainer (Advanced)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Piano Triads Trainer (Mobile Optimized)</title>
     <style>
         :root {
             --bg-color: #1e293b;
@@ -28,22 +28,25 @@
             align-items: center;
             min-height: 100vh;
             margin: 0;
-            padding: 20px;
+            padding: 10px;
             box-sizing: border-box;
             user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
         }
 
         h1 {
-            margin-bottom: 10px;
+            margin-bottom: 5px;
             text-align: center;
+            font-size: 1.5rem;
         }
 
         /* Controls */
         .controls {
             background: var(--control-bg);
-            padding: 20px;
+            padding: 15px;
             border-radius: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             text-align: center;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
             max-width: 600px;
@@ -53,26 +56,25 @@
         .options-container {
             display: flex;
             flex-direction: column;
-            gap: 15px;
-            margin-bottom: 20px;
+            gap: 10px;
+            margin-bottom: 15px;
             border-bottom: 1px solid #475569;
-            padding-bottom: 20px;
+            padding-bottom: 15px;
         }
 
         .option-row {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 15px;
+            gap: 10px;
             flex-wrap: wrap;
         }
 
         .row-label {
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             text-transform: uppercase;
             letter-spacing: 1px;
             color: #94a3b8;
-            margin-right: 5px;
             font-weight: bold;
         }
 
@@ -80,8 +82,8 @@
             cursor: pointer;
             display: flex;
             align-items: center;
-            gap: 6px;
-            font-size: 0.95rem;
+            gap: 4px;
+            font-size: 0.9rem;
         }
 
         input[type="checkbox"] {
@@ -91,7 +93,7 @@
 
         .btn-group {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             justify-content: center;
             flex-wrap: wrap;
         }
@@ -99,19 +101,16 @@
         .btn {
             border: none;
             color: white;
-            padding: 10px 16px;
+            padding: 10px 14px;
             border-radius: 5px;
             cursor: pointer;
             font-size: 0.9rem;
-            transition: opacity 0.2s, transform 0.1s;
-        }
-
-        .btn:hover {
-            opacity: 0.9;
+            transition: opacity 0.2s;
+            touch-action: manipulation;
         }
 
         .btn:active {
-            transform: scale(0.98);
+            opacity: 0.6;
         }
 
         .btn-primary {
@@ -129,37 +128,37 @@
         /* HUD */
         .hud {
             text-align: center;
-            margin-bottom: 20px;
-            min-height: 100px;
+            margin-bottom: 15px;
+            min-height: 90px;
         }
 
         .target-chord {
-            font-size: 3rem;
+            font-size: 2.5rem;
             font-weight: bold;
             color: var(--key-active);
-            margin: 5px 0;
+            margin: 0;
             line-height: 1;
         }
 
         .sub-text {
-            font-size: 1.2rem;
+            font-size: 1rem;
             color: #cbd5e1;
-            font-weight: normal;
             margin-top: 5px;
             background: rgba(255, 255, 255, 0.1);
             display: inline-block;
-            padding: 2px 10px;
+            padding: 2px 8px;
             border-radius: 12px;
         }
 
         .status-msg {
-            height: 24px;
+            height: 20px;
             color: #cbd5e1;
-            margin-top: 10px;
+            margin-top: 5px;
             font-weight: 500;
+            font-size: 0.9rem;
         }
 
-        /* PIANO */
+        /* PIANO WRAPPER */
         .piano-wrapper {
             display: flex;
             justify-content: center;
@@ -167,7 +166,9 @@
             background: #111;
             border-radius: 8px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-            margin-bottom: 30px;
+            margin-bottom: 20px;
+            /* Prevent scrolling when touching piano */
+            touch-action: none;
         }
 
         .piano-container {
@@ -176,14 +177,17 @@
             width: 560px;
             background: #000;
             display: flex;
+            cursor: pointer;
         }
 
+        /* KEY STYLES */
         .key {
-            cursor: pointer;
+            /* Important: Keys ignore pointer events so the container handles the logic */
+            pointer-events: none;
             border-bottom-left-radius: 5px;
             border-bottom-right-radius: 5px;
-            transition: background-color 0.1s;
             box-sizing: border-box;
+            transition: background-color 0.05s;
         }
 
         .key-white {
@@ -202,7 +206,6 @@
             flex-shrink: 0;
         }
 
-        .key-white:active,
         .key-white.active {
             background: linear-gradient(to bottom, #fff 0%, var(--key-active) 100%);
         }
@@ -210,6 +213,7 @@
         .key-black {
             width: 24px;
             height: 60%;
+            /* 108px */
             background: var(--black-key);
             position: absolute;
             z-index: 10;
@@ -219,7 +223,6 @@
             border-bottom-right-radius: 3px;
         }
 
-        .key-black:active,
         .key-black.active {
             background: linear-gradient(to bottom, #222 0%, var(--key-active) 100%);
         }
@@ -236,16 +239,16 @@
             background: var(--key-warn) !important;
         }
 
-        /* EXCLUDED LIST STYLES */
+        /* EXCLUDED LIST */
         .exclusion-zone {
             width: 100%;
             max-width: 600px;
             border-top: 1px solid #334155;
-            padding-top: 20px;
+            padding-top: 15px;
         }
 
         .exclusion-title {
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             color: #94a3b8;
             margin-bottom: 10px;
             text-align: center;
@@ -254,7 +257,7 @@
         .tags-container {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
+            gap: 6px;
             justify-content: center;
         }
 
@@ -263,17 +266,11 @@
             color: #e2e8f0;
             padding: 4px 10px;
             border-radius: 15px;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             cursor: pointer;
             display: flex;
             align-items: center;
             gap: 5px;
-            transition: background 0.2s;
-        }
-
-        .tag:hover {
-            background: #ef4444;
-            text-decoration: line-through;
         }
 
         .tag span {
@@ -282,13 +279,19 @@
 
         @media (max-width: 650px) {
             .piano-wrapper {
-                transform: scale(0.65);
-                margin-top: -20px;
-                margin-bottom: 0;
+                /* Scale down for mobile */
+                transform: scale(0.62);
+                margin-top: -30px;
+                margin-bottom: -20px;
             }
 
-            .target-chord {
-                font-size: 2.2rem;
+            .controls {
+                padding: 10px;
+            }
+
+            .btn {
+                padding: 8px 12px;
+                font-size: 0.8rem;
             }
         }
     </style>
@@ -296,23 +299,19 @@
 
 <body>
 
-    <h1>Piano Triads Trainer</h1>
+    <h1>Piano Triads Trainer (v2)</h1>
 
     <div class="controls">
-
         <div class="options-container">
-            <!-- Chord Types -->
             <div class="option-row">
-                <span class="row-label">Types:</span>
-                <label><input type="checkbox" id="opt-major" checked> Major</label>
-                <label><input type="checkbox" id="opt-minor" checked> Minor</label>
+                <span class="row-label">Type:</span>
+                <label><input type="checkbox" id="opt-major" checked> Maj</label>
+                <label><input type="checkbox" id="opt-minor" checked> Min</label>
                 <label><input type="checkbox" id="opt-dim"> Dim</label>
                 <label><input type="checkbox" id="opt-aug"> Aug</label>
             </div>
-
-            <!-- Inversion Selection -->
             <div class="option-row">
-                <span class="row-label">Inversions:</span>
+                <span class="row-label">Inv:</span>
                 <label><input type="checkbox" id="opt-inv-root" checked> Root</label>
                 <label><input type="checkbox" id="opt-inv-1st"> 1st</label>
                 <label><input type="checkbox" id="opt-inv-2nd"> 2nd</label>
@@ -320,11 +319,9 @@
         </div>
 
         <div class="btn-group">
-            <button class="btn btn-primary" id="btn-skip">Skip / Next</button>
+            <button class="btn btn-primary" id="btn-skip">Next</button>
             <button class="btn btn-secondary" id="btn-show">Show Answer</button>
-            <button class="btn btn-exclude" id="btn-exclude" title="Exclude this chord from future questions">
-                I know this (Exclude)
-            </button>
+            <button class="btn btn-exclude" id="btn-exclude">Exclude</button>
         </div>
     </div>
 
@@ -338,7 +335,7 @@
     </div>
 
     <div class="exclusion-zone" id="exclusion-zone" style="display:none;">
-        <div class="exclusion-title">Excluded (Mastered) Chords - Click to Restore</div>
+        <div class="exclusion-title">Mastered Chords (Tap to Restore)</div>
         <div class="tags-container" id="excluded-list"></div>
     </div>
 
@@ -358,28 +355,22 @@
 
         const INVERSIONS = {
             0: { name: "Root Position", bassIdx: 0 },
-            1: { name: "1st Inversion", bassIdx: 1 }, // Bass is 3rd
-            2: { name: "2nd Inversion", bassIdx: 2 }  // Bass is 5th
+            1: { name: "1st Inversion", bassIdx: 1 },
+            2: { name: "2nd Inversion", bassIdx: 2 }
         };
 
         const START_OCTAVE = 3;
         const NUM_OCTAVES = 2; // C3 to B4
+        const WHITE_KEY_WIDTH = 40;
+        const BLACK_KEY_HEIGHT = 108; // 60% of 180px
 
         /** STATE */
-        let currentTask = {
-            rootName: null,
-            rootIndex: null,
-            type: null,
-            inversion: 0,
-            id: null,
-            targetIndices: [],
-            targetBassIndex: 0
-        };
-
+        let currentTask = { rootName: null, rootIndex: null, type: null, inversion: 0, id: null, targetIndices: [], targetBassIndex: 0 };
         let pressedNotes = new Set();
         let excludedChords = new Set();
         let isFrozen = false;
         let audioCtx = null;
+        let blackKeyZones = []; // Stores hitboxes for black keys
 
         /** DOM ELEMENTS */
         const pianoEl = document.getElementById('piano');
@@ -391,6 +382,7 @@
         /** INITIALIZATION */
         function initPiano() {
             pianoEl.innerHTML = '';
+            blackKeyZones = [];
             let whiteKeyCount = 0;
             const totalNotes = NUM_OCTAVES * 12;
             const startMidi = START_OCTAVE * 12 + 12; // C3 = 48
@@ -403,27 +395,129 @@
                 const key = document.createElement('div');
                 key.dataset.note = midiVal;
                 key.classList.add('key');
+                key.id = `key-${midiVal}`;
 
                 if (isBlack) {
                     key.classList.add('key-black');
-                    let leftPos = (whiteKeyCount * 40) - 12;
+                    let leftPos = (whiteKeyCount * WHITE_KEY_WIDTH) - 12;
+                    // Visual Tuning
                     if (noteIndex === 1) leftPos -= 2;
                     if (noteIndex === 3) leftPos += 2;
                     if (noteIndex === 6) leftPos -= 2;
                     if (noteIndex === 10) leftPos += 2;
+
                     key.style.left = `${leftPos}px`;
+
+                    // Store logic hitbox (Center X)
+                    // Black key is 24px wide. Center is left + 12.
+                    blackKeyZones.push({
+                        midi: midiVal,
+                        centerX: leftPos + 12
+                    });
                 } else {
                     key.classList.add('key-white');
                     if (noteIndex === 0) key.textContent = 'C' + (Math.floor(midiVal / 12) - 1);
                     whiteKeyCount++;
                 }
-
-                key.addEventListener('mousedown', (e) => {
-                    e.preventDefault();
-                    toggleKey(midiVal);
-                });
                 pianoEl.appendChild(key);
             }
+
+            // Attach global input handler to container instead of individual keys
+            attachInputHandlers();
+        }
+
+        /** INPUT HANDLING (Mobile Optimized) */
+        function attachInputHandlers() {
+            const handleInput = (e) => {
+                if (isFrozen) return;
+                e.preventDefault(); // Prevent scroll/zoom
+
+                // Handle multi-touch or single mouse
+                const points = e.touches ? e.touches : [e];
+
+                // To support sliding, we process the first touch point generally
+                // But let's keep it simple: Just take the primary interaction
+                const touch = points[0];
+                const rect = pianoEl.getBoundingClientRect();
+
+                // Coordinates relative to piano container (scaled)
+                // We need to account for CSS transform scaling if necessary, but
+                // getBoundingClientRect usually handles the visual size.
+                // However, the internal coordinate system is fixed (560x180).
+                // We need to map visual click X/Y to internal 560x180 space.
+
+                const scaleX = 560 / rect.width;
+                const scaleY = 180 / rect.height;
+
+                const x = (touch.clientX - rect.left) * scaleX;
+                const y = (touch.clientY - rect.top) * scaleY;
+
+                processHit(x, y);
+            };
+
+            // Mouse
+            pianoEl.addEventListener('mousedown', handleInput);
+            // Touch
+            pianoEl.addEventListener('touchstart', handleInput);
+
+            // Optional: Drag support (Glissando)
+            // Only trigger if we move significantly to a new key, 
+            // avoiding rapid toggling on boundary.
+            // For a triad trainer, tap is safer, but let's enable simple drag.
+            pianoEl.addEventListener('mousemove', (e) => {
+                if (e.buttons === 1) handleInput(e);
+            });
+            pianoEl.addEventListener('touchmove', handleInput);
+        }
+
+        function processHit(x, y) {
+            let detectedMidi = -1;
+
+            // ZONE LOGIC
+            // 1. Check if Y is in Top Half (Black key area)
+            if (y < BLACK_KEY_HEIGHT) {
+                // We are in the top part. Prefer Black keys.
+                // Check proximity to black key centers.
+                // Standard black key width 24px (radius 12px). 
+                // Let's add "Magnet" padding: radius 18px (36px total width).
+                const magnetRadius = 18;
+
+                const nearestBlack = blackKeyZones.find(z => Math.abs(z.centerX - x) < magnetRadius);
+
+                if (nearestBlack) {
+                    detectedMidi = nearestBlack.midi;
+                } else {
+                    // In top half, but far from a black key -> It's the white key underneath
+                    // White key index = floor(x / 40)
+                    const whiteIdx = Math.floor(x / WHITE_KEY_WIDTH);
+                    detectedMidi = getWhiteKeyMidi(whiteIdx);
+                }
+            } else {
+                // 2. Bottom part. STRICTLY White keys.
+                const whiteIdx = Math.floor(x / WHITE_KEY_WIDTH);
+                detectedMidi = getWhiteKeyMidi(whiteIdx);
+            }
+
+            if (detectedMidi !== -1) {
+                // Debounce: don't toggle if we are dragging on the same key
+                // For simple tap, this acts immediately.
+                toggleKey(detectedMidi);
+            }
+        }
+
+        // Helper to map 0..13 index to MIDI notes (skipping black keys)
+        function getWhiteKeyMidi(index) {
+            // Map of white key index to offset from C
+            // 0=C, 1=D, 2=E, 3=F, 4=G, 5=A, 6=B
+            const scale = [0, 2, 4, 5, 7, 9, 11];
+            if (index < 0 || index >= 14) return -1;
+
+            const octave = Math.floor(index / 7);
+            const step = index % 7;
+
+            // Start Midi is 48 (C3)
+            const startMidi = START_OCTAVE * 12 + 12;
+            return startMidi + (octave * 12) + scale[step];
         }
 
         /** LOGIC */
@@ -434,27 +528,22 @@
             statusEl.textContent = "Select 3 keys";
             statusEl.style.color = "#cbd5e1";
 
-            // 1. Get Enabled Types
             const enabledTypes = [];
             if (document.getElementById('opt-major').checked) enabledTypes.push('Major');
             if (document.getElementById('opt-minor').checked) enabledTypes.push('Minor');
             if (document.getElementById('opt-dim').checked) enabledTypes.push('Diminished');
             if (document.getElementById('opt-aug').checked) enabledTypes.push('Augmented');
 
-            // 2. Get Enabled Inversions
             const enabledInversions = [];
             if (document.getElementById('opt-inv-root').checked) enabledInversions.push(0);
             if (document.getElementById('opt-inv-1st').checked) enabledInversions.push(1);
             if (document.getElementById('opt-inv-2nd').checked) enabledInversions.push(2);
 
-            // Validation
             if (enabledTypes.length === 0 || enabledInversions.length === 0) {
                 displayEl.innerHTML = "<span style='font-size:1.5rem'>Select options</span>";
-                statusEl.textContent = "Please select at least one Type and one Inversion";
                 return;
             }
 
-            // 3. Build Candidate Pool
             const candidatePool = [];
             for (let rootIdx = 0; rootIdx < 12; rootIdx++) {
                 const names = NOTE_NAMES[rootIdx];
@@ -475,21 +564,15 @@
                 return;
             }
 
-            // 4. Selections
             const selection = candidatePool[Math.floor(Math.random() * candidatePool.length)];
             const invId = enabledInversions[Math.floor(Math.random() * enabledInversions.length)];
-
             const typeData = CHORD_TYPES[selection.type];
             const invData = INVERSIONS[invId];
 
-            // 5. Calculate Data
             const targetIndices = typeData.intervals.map(iv => (selection.rootIndex + iv) % 12);
-
-            // Target Bass: Interval index determines which note acts as bass
             const bassInterval = typeData.intervals[invData.bassIdx];
             const targetBassIndex = (selection.rootIndex + bassInterval) % 12;
 
-            // Display
             let displayHTML = `${selection.rootName}${typeData.label}`;
             displayHTML += `<br><div class='sub-text'>${invData.name}</div>`;
 
@@ -506,8 +589,18 @@
             displayEl.innerHTML = displayHTML;
         }
 
+        // Stores the last key toggled to prevent rapid flickering during Drag
+        let lastToggledMidi = -1;
+        let dragTimeout = null;
+
         function toggleKey(midiVal) {
-            if (isFrozen || currentTask.rootIndex === null) return;
+            // If we just processed this note, ignore (debounce for drag)
+            if (midiVal === lastToggledMidi) return;
+            lastToggledMidi = midiVal;
+
+            // Clear debounce after a moment
+            clearTimeout(dragTimeout);
+            dragTimeout = setTimeout(() => { lastToggledMidi = -1; }, 200);
 
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -525,15 +618,15 @@
         }
 
         function updateKeysVisual() {
+            // Reset classes
             document.querySelectorAll('.key').forEach(k => {
-                const val = parseInt(k.dataset.note);
-                if (pressedNotes.has(val)) {
-                    k.classList.add('active');
-                } else {
-                    k.classList.remove('active');
-                    k.classList.remove('warn');
-                    k.classList.remove('wrong');
-                }
+                k.classList.remove('active', 'warn', 'wrong', 'correct');
+            });
+
+            // Apply active class
+            pressedNotes.forEach(midi => {
+                const el = document.getElementById(`key-${midi}`);
+                if (el) el.classList.add('active');
             });
         }
 
@@ -544,7 +637,6 @@
             const pressedIndices = pressedMidiSorted.map(m => m % 12);
             const targetIndicesSorted = [...currentTask.targetIndices].sort((a, b) => a - b);
 
-            // 1. Check notes
             const hasCorrectNotes = JSON.stringify(pressedIndices.sort((a, b) => a - b)) === JSON.stringify(targetIndicesSorted);
 
             if (!hasCorrectNotes) {
@@ -552,17 +644,15 @@
                 return;
             }
 
-            // 2. Check Inversion (Bass Note)
-            const lowestPressedMidi = pressedMidiSorted[0];
-            const lowestPressedIndex = lowestPressedMidi % 12;
-
+            // Check Bass
+            const lowestPressedIndex = pressedMidiSorted[0] % 12;
             if (lowestPressedIndex !== currentTask.targetBassIndex) {
-                statusEl.textContent = "Right notes, wrong inversion. Check the bass note.";
+                statusEl.textContent = "Right notes, wrong inversion. Check bass.";
                 statusEl.style.color = "var(--key-warn)";
-                document.querySelectorAll('.key.active').forEach(k => {
-                    k.classList.add('warn');
-                    setTimeout(() => k.classList.remove('warn'), 500);
+                pressedNotes.forEach(midi => {
+                    document.getElementById(`key-${midi}`).classList.add('warn');
                 });
+                setTimeout(() => document.querySelectorAll('.warn').forEach(k => k.classList.remove('warn')), 500);
                 return;
             }
 
@@ -574,11 +664,10 @@
             statusEl.textContent = "Correct!";
             statusEl.style.color = "var(--key-success)";
 
-            document.querySelectorAll('.key.active').forEach(k => k.classList.add('correct'));
+            pressedNotes.forEach(midi => document.getElementById(`key-${midi}`).classList.add('correct'));
             playChord(Array.from(pressedNotes));
 
             setTimeout(() => {
-                document.querySelectorAll('.key.correct').forEach(k => k.classList.remove('correct'));
                 generateChord();
             }, 1200);
         }
@@ -586,7 +675,8 @@
         function failSequence(msg) {
             statusEl.textContent = msg;
             statusEl.style.color = "var(--key-error)";
-            document.querySelectorAll('.key.active').forEach(k => {
+            pressedNotes.forEach(midi => {
+                const k = document.getElementById(`key-${midi}`);
                 k.classList.add('wrong');
                 setTimeout(() => k.classList.remove('wrong'), 300);
             });
@@ -614,7 +704,7 @@
                     const lbl = CHORD_TYPES[type].label;
                     const tag = document.createElement('div');
                     tag.className = 'tag';
-                    tag.innerHTML = `<span>${rootName}${lbl}</span> ×`;
+                    tag.innerHTML = `<span>${rootName}${lbl}</span>`;
                     tag.onclick = () => restoreChord(id);
                     excludedListEl.appendChild(tag);
                 });
@@ -628,30 +718,13 @@
             pressedNotes.clear();
 
             const typeData = CHORD_TYPES[currentTask.type];
-            const intervals = typeData.intervals;
-
-            // 1. Root Midi (C3 = 48)
             let rootMidi = 48 + currentTask.rootIndex;
+            let chordMidi = typeData.intervals.map(iv => rootMidi + iv);
 
-            // 2. Base chord Midi values
-            let chordMidi = intervals.map(iv => rootMidi + iv);
+            if (currentTask.inversion === 1) chordMidi[0] += 12;
+            else if (currentTask.inversion === 2) { chordMidi[0] += 12; chordMidi[1] += 12; }
 
-            // 3. Apply Inversion logic
-            if (currentTask.inversion === 1) {
-                // Move root (index 0) up octave
-                chordMidi[0] += 12;
-            } else if (currentTask.inversion === 2) {
-                // Move root and 3rd (index 0 and 1) up octave
-                chordMidi[0] += 12;
-                chordMidi[1] += 12;
-            }
-
-            // 4. Bound Check: if notes exceed B4 (71), shift whole chord down octave
-            // If that pushes it below C3, we might need more advanced logic, 
-            // but for this specific 2-octave keyboard, this simple check covers 99% of cases
-            if (Math.max(...chordMidi) > 71) {
-                chordMidi = chordMidi.map(n => n - 12);
-            }
+            if (Math.max(...chordMidi) > 71) chordMidi = chordMidi.map(n => n - 12);
 
             chordMidi.forEach(n => pressedNotes.add(n));
             updateKeysVisual();
@@ -687,15 +760,11 @@
         document.getElementById('btn-show').addEventListener('click', showAnswer);
         document.getElementById('btn-exclude').addEventListener('click', excludeCurrentChord);
 
-        // All checkboxes trigger regenerate
-        const allChecks = document.querySelectorAll('input[type="checkbox"]');
-        allChecks.forEach(cb => {
+        document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
             cb.addEventListener('change', () => {
-                // Safety: ensure at least one type and one inv is checked
                 const types = document.querySelectorAll('.option-row:nth-child(1) input:checked');
                 const invs = document.querySelectorAll('.option-row:nth-child(2) input:checked');
 
-                // If user unchecks the last one, check it back immediately
                 if (types.length === 0 && cb.closest('.option-row:nth-child(1)')) cb.checked = true;
                 if (invs.length === 0 && cb.closest('.option-row:nth-child(2)')) cb.checked = true;
 
