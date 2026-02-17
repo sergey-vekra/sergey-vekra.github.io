@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Piano Triads Trainer (v4)</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+</head>
+
+<body>
+
+    <h1>Piano Triads Trainer (v4)</h1>
+
+    <div class="controls">
+        <div class="options-container">
+
+            <!-- New Mode Selector -->
+            <div class="option-row"
+                style="padding-bottom: 8px; border-bottom: 1px solid #475569; margin-bottom: 8px; width: 100%;">
+                <span class="row-label">Mode:</span>
+                <select id="opt-mode"
+                    style="background: #1e293b; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px;">
+                    <option value="random">Random</option>
+                    <option value="circle">Circle of Fifths</option>
+                </select>
+            </div>
+
+            <div class="option-row">
+                <span class="row-label">Roots:</span>
+                <label><input type="checkbox" id="opt-root-naturals" checked> Natural</label>
+                <label><input type="checkbox" id="opt-root-accidentals" checked> Accidental</label>
+            </div>
+
+            <div class="option-row">
+                <span class="row-label">Type:</span>
+                <label><input type="checkbox" id="opt-major" checked> Maj</label>
+                <label><input type="checkbox" id="opt-minor" checked> Min</label>
+                <label><input type="checkbox" id="opt-dim"> Dim</label>
+                <label><input type="checkbox" id="opt-aug"> Aug</label>
+            </div>
+
+            <div class="option-row">
+                <span class="row-label">Inv:</span>
+                <label><input type="checkbox" id="opt-inv-root" checked> Root</label>
+                <label><input type="checkbox" id="opt-inv-1st"> 1st</label>
+                <label><input type="checkbox" id="opt-inv-2nd"> 2nd</label>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button class="btn btn-primary" id="btn-skip">Next</button>
+            <button class="btn btn-secondary" id="btn-show">Show Answer</button>
+            <button class="btn btn-exclude" id="btn-exclude">Exclude</button>
+        </div>
+    </div>
+
+    <div class="hud">
+        <div class="target-chord" id="display-chord">...</div>
+        <div class="status-msg" id="status-msg">Select 3 keys</div>
+    </div>
+
+    <div class="piano-wrapper">
+        <div class="piano-container" id="piano"></div>
+    </div>
+
+    <div class="exclusion-zone" id="exclusion-zone" style="display:none;">
+        <div class="exclusion-title">Mastered Chords (Tap to Restore)</div>
+        <div class="tags-container" id="excluded-list"></div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+
+</html>
