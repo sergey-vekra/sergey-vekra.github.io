@@ -188,25 +188,24 @@
         <p class="text-amber-400 font-mono text-sm">Preparing 88-Key Grand Piano...</p>
     </div>
 
-    <header class="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
-        <div class="flex items-center gap-4">
-            <div>
-                <h1 class="text-xl font-black text-white leading-none tracking-tight">88-KEY PIANO LAB</h1>
-                <p id="instruction-text" class="text-[11px] text-slate-400 font-mono mt-1">
-                    Step: <span id="step-display" class="text-amber-400">None</span> | Click empty steps to auto-copy
-                    pattern
-                </p>
-            </div>
+    <header
+        class="p-4 bg-slate-900 border-b border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex flex-col items-center sm:items-start text-center sm:text-left gap-1">
+            <h1 class="text-xl font-black text-white leading-none tracking-tight">88-KEY PIANO LAB</h1>
+            <p id="instruction-text" class="text-[11px] text-slate-400 font-mono">
+                Step: <span id="step-display" class="text-amber-400">None</span> | Click empty steps to auto-copy
+                pattern
+            </p>
         </div>
 
-        <div class="flex gap-6 items-center">
-            <div class="flex flex-col items-end">
+        <div class="flex gap-4 sm:gap-6 items-center justify-center w-full sm:w-auto">
+            <div class="flex flex-col items-center sm:items-end">
                 <span class="text-[10px] text-slate-500 font-bold uppercase">Tempo</span>
                 <input type="number" id="bpm-input" value="90"
                     class="bg-slate-800 border border-slate-700 rounded px-2 py-1 w-16 text-center text-sm font-mono text-white">
             </div>
             <button id="play-btn"
-                class="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all active:scale-95">
+                class="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all active:scale-95 min-w-[100px] justify-center">
                 <span id="play-icon">▶</span> <span id="play-text">Play</span>
             </button>
         </div>
@@ -248,7 +247,7 @@
                     "A5": "A5.mp3", "C6": "C6.mp3", "D#6": "Ds6.mp3", "F#6": "Fs6.mp3", "A6": "A6.mp3",
                     "C7": "C7.mp3", "D#7": "Ds7.mp3", "F#7": "Fs7.mp3", "A7": "A7.mp3", "C8": "C8.mp3"
                 },
-                release: 1,
+                release: 1.5,
                 baseUrl: "https://tonejs.github.io/audio/salamander/",
                 onload: () => {
                     document.getElementById('loading-overlay').style.opacity = '0';
@@ -396,35 +395,31 @@
         function tick() {
             if (!state.playing) return;
 
+            // Visual update for sequencer
             document.querySelectorAll('.step').forEach((s) => {
                 const idx = parseInt(s.dataset.index);
                 s.classList.toggle('active-tick', idx === state.currentStep);
             });
 
-            let lastContentIdx = -1;
-            for (let i = 0; i < 16; i++) {
-                const checkIdx = (state.currentStep - i + 16) % 16;
-                if (state.sequence[checkIdx].size > 0) {
-                    lastContentIdx = checkIdx;
-                    break;
-                }
-            }
+            const targetNotes = state.sequence[state.currentStep];
 
-            const targetNotes = lastContentIdx !== -1 ? state.sequence[lastContentIdx] : new Set();
-
-            state.activeNotes.forEach(note => {
-                if (!targetNotes.has(note)) {
+            // LOGIC CHANGE:
+            // If the step has notes, we re-strike them.
+            // If the step is empty, we DO NOT release. We let them sustain.
+            if (targetNotes.size > 0) {
+                // 1. Release previous notes
+                state.activeNotes.forEach(note => {
                     sampler.triggerRelease(note);
-                    state.activeNotes.delete(note);
-                }
-            });
+                });
+                state.activeNotes.clear();
 
-            targetNotes.forEach(note => {
-                if (!state.activeNotes.has(note)) {
+                // 2. Strike new notes
+                targetNotes.forEach(note => {
                     sampler.triggerAttack(note);
                     state.activeNotes.add(note);
-                }
-            });
+                });
+            }
+            // Else: targetNotes.size === 0, so we just let the audio continue ringing.
 
             syncPianoUI();
 
