@@ -41,27 +41,18 @@ export async function initAudio() {
     isInitialized = true;
 }
 
-export function playTone(midiNote, duration = "8n") {
-    // If we try to play before user has clicked, just return or init
-    if (!isInitialized) initAudio();
+export async function playTone(midiNote, duration = "8n") {
+    await initAudio();
     if (!sampler || !sampler.loaded) return;
-
-    const noteName = midiToNote(midiNote);
-
-    // triggerAttackRelease(note, duration, time, velocity)
-    sampler.triggerAttackRelease(noteName, duration);
+    sampler.triggerAttackRelease(midiToNote(midiNote), duration);
 }
 
-export function playChord(midiNotes) {
-    if (!isInitialized) initAudio();
+export async function playChord(midiNotes) {
+    await initAudio();
     if (!sampler || !sampler.loaded) return;
 
     const now = Tone.now();
-
-    // Strum effect: play notes slightly offset
-    midiNotes.sort((a, b) => a - b).forEach((midi, i) => {
-        const noteName = midiToNote(midi);
-        // Offset each note by 0.05 seconds for a realistic "strum" feel
-        sampler.triggerAttackRelease(noteName, "2n", now + (i * 0.05));
+    [...midiNotes].sort((a, b) => a - b).forEach((midi, i) => {
+        sampler.triggerAttackRelease(midiToNote(midi), "2n", now + (i * 0.05));
     });
 }

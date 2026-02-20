@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grand Piano Rhythm Designer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Import Tone.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        :root {
+            --white-key-width: 32px;
+            --white-key-height: 140px;
+            --black-key-width: 20px;
+            --black-key-height: 85px;
+        }
+
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow: hidden;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        .piano-scroll {
+            overflow-x: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #475569 #0f172a;
+            width: 100%;
+            background: #000;
+        }
+
+        .piano-scroll::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .piano-scroll::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+
+        .piano-container {
+            position: relative;
+            display: flex;
+            padding: 10px 20px 20px 20px;
+            user-select: none;
+            width: fit-content;
+        }
+
+        .key {
+            border: 1px solid #475569;
+            border-radius: 0 0 4px 4px;
+            cursor: pointer;
+            transition: background-color 0.1s;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .white-key {
+            width: var(--white-key-width);
+            height: var(--white-key-height);
+            background: #fff;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            padding-bottom: 8px;
+        }
+
+        .octave-hint {
+            font-size: 10px;
+            font-weight: 800;
+            color: #94a3b8;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        /* Assigned state - subtle highlight */
+        .key.assigned {
+            background: #e2e8f0 !important;
+            border-color: #94a3b8;
+            box-shadow: inset 0 0 6px rgba(148, 163, 184, 0.5);
+        }
+
+        .key.assigned .octave-hint {
+            color: #64748b;
+        }
+
+        /* Active/Playing state - vibrant blue */
+        .key.playing-now {
+            background: #3b82f6 !important;
+            border-color: #2563eb;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.8);
+        }
+
+        .key.playing-now .octave-hint {
+            color: white;
+        }
+
+        .black-key {
+            width: var(--black-key-width);
+            height: var(--black-key-height);
+            background: #1e293b;
+            z-index: 2;
+            margin-left: calc(var(--black-key-width) / -2);
+            margin-right: calc(var(--black-key-width) / -2);
+        }
+
+        .black-key.assigned {
+            background: #334155 !important;
+        }
+
+        .black-key.playing-now {
+            background: #2563eb !important;
+        }
+
+        .step-grid-container {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            padding: 10px;
+            margin: 0 auto;
+            flex-wrap: wrap;
+        }
+
+        .step-group {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+        }
+
+        .step {
+            width: 42px;
+            height: 55px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            color: #64748b;
+        }
+
+        .step.focused {
+            border: 3px solid #fde047;
+            background: #334155;
+            color: #fde047;
+            box-shadow: 0 0 15px rgba(253, 224, 71, 0.4);
+            z-index: 10;
+        }
+
+        .step.has-content {
+            background: #3b82f6;
+            border-color: #60a5fa;
+            color: white;
+        }
+
+        .step.active-tick {
+            transform: scale(1.05);
+            filter: brightness(1.2);
+            border-color: white;
+        }
+
+        #loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: #0f172a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            transition: opacity 0.5s ease;
+        }
+    </style>
+</head>
+
+<body class="flex flex-col h-screen">
+
+    <div id="loading-overlay">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400 mb-4"></div>
+        <p class="text-amber-400 font-mono text-sm">Preparing 88-Key Grand Piano...</p>
+    </div>
+
+    <header class="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <div>
+                <h1 class="text-xl font-black text-white leading-none tracking-tight">88-KEY PIANO LAB</h1>
+                <p id="instruction-text" class="text-[11px] text-slate-400 font-mono mt-1">
+                    Step: <span id="step-display" class="text-amber-400">None</span> | Click empty steps to auto-copy
+                    pattern
+                </p>
+            </div>
+        </div>
+
+        <div class="flex gap-6 items-center">
+            <div class="flex flex-col items-end">
+                <span class="text-[10px] text-slate-500 font-bold uppercase">Tempo</span>
+                <input type="number" id="bpm-input" value="90"
+                    class="bg-slate-800 border border-slate-700 rounded px-2 py-1 w-16 text-center text-sm font-mono text-white">
+            </div>
+            <button id="play-btn"
+                class="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all active:scale-95">
+                <span id="play-icon">▶</span> <span id="play-text">Play</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-grow flex flex-col justify-center bg-slate-950 overflow-hidden">
+        <div id="step-grid-container" class="step-grid-container">
+            <div class="step-group" id="group-0"></div>
+            <div class="step-group" id="group-1"></div>
+            <div class="step-group" id="group-2"></div>
+            <div class="step-group" id="group-3"></div>
+        </div>
+    </main>
+
+    <div class="piano-scroll" id="piano-scroll">
+        <div id="piano" class="piano-container"></div>
+    </div>
+
+    <script>
+        const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const state = {
+            bpm: 90,
+            playing: false,
+            currentStep: 0,
+            focusedStepIdx: null,
+            sequence: Array.from({ length: 16 }, () => new Set()),
+            activeNotes: new Set()
+        };
+
+        let sampler;
+
+        function initAudio() {
+            sampler = new Tone.Sampler({
+                urls: {
+                    "A0": "A0.mp3", "C1": "C1.mp3", "D#1": "Ds1.mp3", "F#1": "Fs1.mp3", "A1": "A1.mp3",
+                    "C2": "C2.mp3", "D#2": "Ds2.mp3", "F#2": "Fs2.mp3", "A2": "A2.mp3", "C3": "C3.mp3",
+                    "D#3": "Ds3.mp3", "F#3": "Fs3.mp3", "A3": "A3.mp3", "C4": "C4.mp3", "D#4": "Ds4.mp3",
+                    "F#4": "Fs4.mp3", "A4": "A4.mp3", "C5": "C5.mp3", "D#5": "Ds5.mp3", "F#5": "Fs5.mp3",
+                    "A5": "A5.mp3", "C6": "C6.mp3", "D#6": "Ds6.mp3", "F#6": "Fs6.mp3", "A6": "A6.mp3",
+                    "C7": "C7.mp3", "D#7": "Ds7.mp3", "F#7": "Fs7.mp3", "A7": "A7.mp3", "C8": "C8.mp3"
+                },
+                release: 1,
+                baseUrl: "https://tonejs.github.io/audio/salamander/",
+                onload: () => {
+                    document.getElementById('loading-overlay').style.opacity = '0';
+                    setTimeout(() => {
+                        document.getElementById('loading-overlay').remove();
+                        const middleC = document.querySelector('[data-note="C4"]');
+                        if (middleC) {
+                            middleC.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                        }
+                    }, 500);
+                }
+            }).toDestination();
+        }
+
+        function init() {
+            for (let i = 0; i < 16; i++) {
+                const groupIdx = Math.floor(i / 4);
+                const groupEl = document.getElementById(`group-${groupIdx}`);
+                const el = document.createElement('div');
+                el.className = 'step';
+                el.innerText = i + 1;
+                el.dataset.index = i;
+                el.onclick = () => handleStepFocus(i);
+                groupEl.appendChild(el);
+            }
+
+            const pianoEl = document.getElementById('piano');
+            for (let i = 9; i < 12; i++) createKey(NOTES[i], 0, pianoEl);
+            for (let oct = 1; oct <= 7; oct++) {
+                NOTES.forEach(n => createKey(n, oct, pianoEl));
+            }
+            createKey('C', 8, pianoEl);
+
+            initAudio();
+        }
+
+        function createKey(name, octave, container) {
+            const id = `${name}${octave}`;
+            const isBlack = name.includes('#');
+            const key = document.createElement('div');
+            key.className = `key ${isBlack ? 'black-key' : 'white-key'}`;
+            key.dataset.note = id;
+
+            if (name === 'C') {
+                const hint = document.createElement('span');
+                hint.className = 'octave-hint';
+                hint.innerText = `C${octave}`;
+                key.appendChild(hint);
+            }
+
+            key.onmousedown = (e) => {
+                e.preventDefault();
+                handleKeyToggle(id);
+            };
+            container.appendChild(key);
+        }
+
+        function handleStepFocus(index) {
+            if (state.sequence[index].size === 0) {
+                let previousFilledStep = -1;
+                for (let i = index - 1; i >= 0; i--) {
+                    if (state.sequence[i].size > 0) {
+                        previousFilledStep = i;
+                        break;
+                    }
+                }
+                if (previousFilledStep === -1) {
+                    for (let i = 15; i > index; i--) {
+                        if (state.sequence[i].size > 0) {
+                            previousFilledStep = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (previousFilledStep !== -1) {
+                    state.sequence[index] = new Set(state.sequence[previousFilledStep]);
+                    syncStepUI();
+                }
+            }
+
+            state.focusedStepIdx = index;
+            document.querySelectorAll('.step').forEach((el) => {
+                const idx = parseInt(el.dataset.index);
+                el.classList.toggle('focused', idx === index);
+            });
+            document.getElementById('step-display').innerText = index + 1;
+            syncPianoUI();
+        }
+
+        async function handleKeyToggle(noteId) {
+            if (Tone.context.state !== 'running') await Tone.start();
+
+            const previewNote = () => {
+                sampler.triggerAttackRelease(noteId, "4n");
+                if (!state.playing) {
+                    const key = document.querySelector(`[data-note="${noteId}"]`);
+                    if (key) {
+                        key.classList.add('playing-now');
+                        setTimeout(() => syncPianoUI(), 250);
+                    }
+                }
+            };
+
+            if (state.focusedStepIdx === null) {
+                previewNote();
+                return;
+            }
+
+            const activeSet = state.sequence[state.focusedStepIdx];
+            if (activeSet.has(noteId)) {
+                activeSet.delete(noteId);
+            } else {
+                activeSet.add(noteId);
+                previewNote();
+            }
+            syncStepUI();
+            syncPianoUI();
+        }
+
+        function syncStepUI() {
+            document.querySelectorAll('.step').forEach((el) => {
+                const idx = parseInt(el.dataset.index);
+                el.classList.toggle('has-content', state.sequence[idx].size > 0);
+            });
+        }
+
+        function syncPianoUI() {
+            const currentNotes = state.focusedStepIdx !== null ? state.sequence[state.focusedStepIdx] : new Set();
+            document.querySelectorAll('.key').forEach(key => {
+                const note = key.dataset.note;
+                const isSelected = currentNotes.has(note);
+                const isPlaying = state.activeNotes.has(note);
+
+                key.classList.toggle('assigned', isSelected);
+
+                if (state.playing) {
+                    key.classList.toggle('playing-now', isPlaying);
+                } else {
+                    key.classList.toggle('playing-now', isSelected);
+                }
+            });
+        }
+
+        function tick() {
+            if (!state.playing) return;
+
+            document.querySelectorAll('.step').forEach((s) => {
+                const idx = parseInt(s.dataset.index);
+                s.classList.toggle('active-tick', idx === state.currentStep);
+            });
+
+            let lastContentIdx = -1;
+            for (let i = 0; i < 16; i++) {
+                const checkIdx = (state.currentStep - i + 16) % 16;
+                if (state.sequence[checkIdx].size > 0) {
+                    lastContentIdx = checkIdx;
+                    break;
+                }
+            }
+
+            const targetNotes = lastContentIdx !== -1 ? state.sequence[lastContentIdx] : new Set();
+
+            state.activeNotes.forEach(note => {
+                if (!targetNotes.has(note)) {
+                    sampler.triggerRelease(note);
+                    state.activeNotes.delete(note);
+                }
+            });
+
+            targetNotes.forEach(note => {
+                if (!state.activeNotes.has(note)) {
+                    sampler.triggerAttack(note);
+                    state.activeNotes.add(note);
+                }
+            });
+
+            syncPianoUI();
+
+            state.currentStep = (state.currentStep + 1) % 16;
+            const stepTime = 60 / state.bpm / 4;
+            setTimeout(tick, stepTime * 1000);
+        }
+
+        document.getElementById('play-btn').onclick = async function () {
+            if (Tone.context.state !== 'running') await Tone.start();
+
+            state.playing = !state.playing;
+            this.classList.toggle('bg-green-600');
+            this.classList.toggle('bg-red-600');
+            document.getElementById('play-text').innerText = state.playing ? 'Stop' : 'Play';
+            document.getElementById('play-icon').innerText = state.playing ? '⏹' : '▶';
+
+            if (state.playing) {
+                state.currentStep = 0;
+                syncPianoUI();
+                tick();
+            } else {
+                state.activeNotes.forEach(note => sampler.triggerRelease(note));
+                state.activeNotes.clear();
+                syncPianoUI();
+                document.querySelectorAll('.step').forEach(s => s.classList.remove('active-tick'));
+            }
+        };
+
+        document.getElementById('bpm-input').onchange = (e) => {
+            state.bpm = Math.max(20, parseInt(e.target.value) || 90);
+        };
+
+        init();
+    </script>
+</body>
+
+</html>
