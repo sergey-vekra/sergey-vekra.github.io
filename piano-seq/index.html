@@ -77,26 +77,16 @@
             user-select: none;
         }
 
-        /* Assigned state - subtle highlight */
         .key.assigned {
             background: #e2e8f0 !important;
             border-color: #94a3b8;
             box-shadow: inset 0 0 6px rgba(148, 163, 184, 0.5);
         }
 
-        .key.assigned .octave-hint {
-            color: #64748b;
-        }
-
-        /* Active/Playing state - vibrant blue */
         .key.playing-now {
             background: #3b82f6 !important;
             border-color: #2563eb;
             box-shadow: 0 0 15px rgba(59, 130, 246, 0.8);
-        }
-
-        .key.playing-now .octave-hint {
-            color: white;
         }
 
         .black-key {
@@ -120,15 +110,20 @@
             display: flex;
             justify-content: center;
             gap: 12px;
-            padding: 10px;
+            padding: 20px;
             margin: 0 auto;
             flex-wrap: wrap;
+            overflow-y: auto;
+            max-height: 100%;
         }
 
         .step-group {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 4px;
+            padding: 4px;
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 8px;
         }
 
         .step {
@@ -145,6 +140,8 @@
             font-size: 11px;
             font-weight: bold;
             color: #64748b;
+            user-select: none;
+            touch-action: manipulation;
         }
 
         .step.focused {
@@ -165,6 +162,12 @@
             transform: scale(1.05);
             filter: brightness(1.2);
             border-color: white;
+        }
+
+        /* Delete mode styles */
+        body.delete-mode-active .step:hover {
+            border-color: #ef4444;
+            background: #450a0a;
         }
 
         #loading-overlay {
@@ -191,14 +194,25 @@
     <header
         class="p-4 bg-slate-900 border-b border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div class="flex flex-col items-center sm:items-start text-center sm:text-left gap-1">
-            <h1 class="text-xl font-black text-white leading-none tracking-tight">88-KEY PIANO LAB (v0.2)</h1>
+            <h1 class="text-xl font-black text-white leading-none tracking-tight">88-KEY PIANO LAB (v0.3)</h1>
             <p id="instruction-text" class="text-[11px] text-slate-400 font-mono">
-                Step: <span id="step-display" class="text-amber-400">None</span> | Click empty steps to auto-copy
-                pattern
+                Step: <span id="step-display" class="text-amber-400">None</span> | <span id="mode-text"
+                    class="text-slate-300 italic">Edit Mode</span>
             </p>
         </div>
 
-        <div class="flex gap-4 sm:gap-6 items-center justify-center w-full sm:w-auto">
+        <div class="flex flex-wrap gap-4 sm:gap-6 items-bottom justify-center w-full sm:w-auto">
+            <div class="flex items-center gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700">
+                <button id="mode-edit-btn"
+                    class="px-3 py-1 rounded text-xs font-bold transition-colors bg-blue-600 text-white">EDIT</button>
+                <button id="mode-delete-btn"
+                    class="px-3 py-1 rounded text-xs font-bold transition-colors text-slate-400 hover:text-white">CLEAR</button>
+            </div>
+            <div class="flex flex-col items-center sm:items-end">
+                <span class="text-[10px] text-slate-500 font-bold uppercase">Steps</span>
+                <input type="number" id="step-count-input" value="16" min="4" max="64"
+                    class="bg-slate-800 border border-slate-700 rounded px-2 py-1 w-16 text-center text-sm font-mono text-white">
+            </div>
             <div class="flex flex-col items-center sm:items-end">
                 <span class="text-[10px] text-slate-500 font-bold uppercase">Tempo</span>
                 <input type="number" id="bpm-input" value="90"
@@ -211,12 +225,9 @@
         </div>
     </header>
 
-    <main class="flex-grow flex flex-col justify-center bg-slate-950 overflow-hidden">
+    <main class="flex-grow flex flex-col justify-start bg-slate-950 overflow-hidden">
         <div id="step-grid-container" class="step-grid-container">
-            <div class="step-group" id="group-0"></div>
-            <div class="step-group" id="group-1"></div>
-            <div class="step-group" id="group-2"></div>
-            <div class="step-group" id="group-3"></div>
+            <!-- Dynamically generated groups -->
         </div>
     </main>
 
@@ -230,8 +241,10 @@
             bpm: 90,
             playing: false,
             currentStep: 0,
+            totalSteps: 16,
             focusedStepIdx: null,
-            sequence: Array.from({ length: 16 }, () => new Set()),
+            isDeleteMode: false,
+            sequence: Array.from({ length: 64 }, () => new Set()),
             activeNotes: new Set()
         };
 
@@ -262,17 +275,75 @@
             }).toDestination();
         }
 
-        function init() {
-            for (let i = 0; i < 16; i++) {
-                const groupIdx = Math.floor(i / 4);
-                const groupEl = document.getElementById(`group-${groupIdx}`);
-                const el = document.createElement('div');
-                el.className = 'step';
-                el.innerText = i + 1;
-                el.dataset.index = i;
-                el.onclick = () => handleStepFocus(i);
-                groupEl.appendChild(el);
+        function renderStepGrid() {
+            const container = document.getElementById('step-grid-container');
+            container.innerHTML = '';
+
+            const numGroups = Math.ceil(state.totalSteps / 4);
+
+            for (let g = 0; g < numGroups; g++) {
+                const groupEl = document.createElement('div');
+                groupEl.className = 'step-group';
+
+                for (let i = 0; i < 4; i++) {
+                    const stepIdx = (g * 4) + i;
+                    if (stepIdx >= state.totalSteps) break;
+
+                    const el = document.createElement('div');
+                    el.className = 'step';
+                    el.innerText = stepIdx + 1;
+                    el.dataset.index = stepIdx;
+
+                    if (state.focusedStepIdx === stepIdx) el.classList.add('focused');
+                    if (state.sequence[stepIdx].size > 0) el.classList.add('has-content');
+
+                    el.onclick = () => {
+                        if (state.isDeleteMode) {
+                            clearStep(stepIdx);
+                        } else {
+                            handleStepFocus(stepIdx);
+                        }
+                    };
+
+                    // Desktop Shortcut: Right click to clear
+                    el.oncontextmenu = (e) => {
+                        e.preventDefault();
+                        clearStep(stepIdx);
+                    };
+
+                    groupEl.appendChild(el);
+                }
+                container.appendChild(groupEl);
             }
+        }
+
+        function toggleMode(isDelete) {
+            state.isDeleteMode = isDelete;
+            const editBtn = document.getElementById('mode-edit-btn');
+            const deleteBtn = document.getElementById('mode-delete-btn');
+            const modeText = document.getElementById('mode-text');
+
+            if (isDelete) {
+                deleteBtn.classList.add('bg-red-600', 'text-white');
+                deleteBtn.classList.remove('text-slate-400');
+                editBtn.classList.remove('bg-blue-600', 'text-white');
+                editBtn.classList.add('text-slate-400');
+                modeText.innerText = 'Clear Mode: Tap steps to wipe';
+                modeText.classList.add('text-red-400');
+                document.body.classList.add('delete-mode-active');
+            } else {
+                editBtn.classList.add('bg-blue-600', 'text-white');
+                editBtn.classList.remove('text-slate-400');
+                deleteBtn.classList.remove('bg-red-600', 'text-white');
+                deleteBtn.classList.add('text-slate-400');
+                modeText.innerText = 'Edit Mode';
+                modeText.classList.remove('text-red-400');
+                document.body.classList.remove('delete-mode-active');
+            }
+        }
+
+        function init() {
+            renderStepGrid();
 
             const pianoEl = document.getElementById('piano');
             for (let i = 9; i < 12; i++) createKey(NOTES[i], 0, pianoEl);
@@ -282,6 +353,9 @@
             createKey('C', 8, pianoEl);
 
             initAudio();
+
+            document.getElementById('mode-edit-btn').onclick = () => toggleMode(false);
+            document.getElementById('mode-delete-btn').onclick = () => toggleMode(true);
         }
 
         function createKey(name, octave, container) {
@@ -305,7 +379,16 @@
             container.appendChild(key);
         }
 
+        function clearStep(index) {
+            state.sequence[index].clear();
+            syncStepUI();
+            if (state.focusedStepIdx === index) {
+                syncPianoUI();
+            }
+        }
+
         function handleStepFocus(index) {
+            // Auto-copy logic: If clicking empty, copy from last non-empty
             if (state.sequence[index].size === 0) {
                 let previousFilledStep = -1;
                 for (let i = index - 1; i >= 0; i--) {
@@ -315,7 +398,7 @@
                     }
                 }
                 if (previousFilledStep === -1) {
-                    for (let i = 15; i > index; i--) {
+                    for (let i = state.totalSteps - 1; i > index; i--) {
                         if (state.sequence[i].size > 0) {
                             previousFilledStep = i;
                             break;
@@ -395,7 +478,6 @@
         function tick() {
             if (!state.playing) return;
 
-            // Visual update for sequencer
             document.querySelectorAll('.step').forEach((s) => {
                 const idx = parseInt(s.dataset.index);
                 s.classList.toggle('active-tick', idx === state.currentStep);
@@ -403,27 +485,19 @@
 
             const targetNotes = state.sequence[state.currentStep];
 
-            // LOGIC CHANGE:
-            // If the step has notes, we re-strike them.
-            // If the step is empty, we DO NOT release. We let them sustain.
             if (targetNotes.size > 0) {
-                // 1. Release previous notes
-                state.activeNotes.forEach(note => {
-                    sampler.triggerRelease(note);
-                });
+                state.activeNotes.forEach(note => sampler.triggerRelease(note));
                 state.activeNotes.clear();
 
-                // 2. Strike new notes
                 targetNotes.forEach(note => {
                     sampler.triggerAttack(note);
                     state.activeNotes.add(note);
                 });
             }
-            // Else: targetNotes.size === 0, so we just let the audio continue ringing.
 
             syncPianoUI();
 
-            state.currentStep = (state.currentStep + 1) % 16;
+            state.currentStep = (state.currentStep + 1) % state.totalSteps;
             const stepTime = 60 / state.bpm / 4;
             setTimeout(tick, stepTime * 1000);
         }
@@ -451,6 +525,19 @@
 
         document.getElementById('bpm-input').onchange = (e) => {
             state.bpm = Math.max(20, parseInt(e.target.value) || 90);
+        };
+
+        document.getElementById('step-count-input').onchange = (e) => {
+            let val = parseInt(e.target.value);
+            if (isNaN(val)) val = 16;
+            state.totalSteps = Math.min(64, Math.max(4, val));
+            e.target.value = state.totalSteps;
+
+            if (state.currentStep >= state.totalSteps) state.currentStep = 0;
+            if (state.focusedStepIdx >= state.totalSteps) state.focusedStepIdx = null;
+
+            renderStepGrid();
+            syncPianoUI();
         };
 
         init();
