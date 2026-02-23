@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NoteMaster Pro - Full Keyboard</title>
+  <!-- Load React, ReactDOM, and Babel for JSX transpiling in the browser -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Load Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Load Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    .custom-scrollbar::-webkit-scrollbar {
+      height: 10px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #1e293b;
+      border-radius: 20px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 20px;
+      border: 2px solid #1e293b;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+
+    @keyframes shake {
+
+      0%,
+      100% {
+        transform: translateX(-50%);
+      }
+
+      25% {
+        transform: translateX(-55%);
+      }
+
+      75% {
+        transform: translateX(-45%);
+      }
+    }
+
+    .animate-shake {
+      animation: shake 0.15s ease-in-out 0s 2;
+    }
+
+    .clef-font {
+      font-family: 'serif';
+      line-height: 1;
+    }
+
+    /* Piano Styling */
+    .piano-container {
+      background: linear-gradient(to bottom, #2c1810, #1a0f0a);
+      border-radius: 1rem 1rem 2.5rem 2.5rem;
+      padding: 40px 20px 20px 20px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 2px 10px rgba(255, 255, 255, 0.1);
+      position: relative;
+      width: 100%;
+    }
+
+    .piano-felt {
+      position: absolute;
+      top: 32px;
+      left: 20px;
+      right: 20px;
+      height: 8px;
+      background: #991b1b;
+      z-index: 20;
+      box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .white-key {
+      background: linear-gradient(to bottom, #eee 0%, #fff 5%, #fff 90%, #ddd 100%);
+      border: 1px solid #ccc;
+      border-radius: 0 0 5px 5px;
+      box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.8), 0 4px 4px rgba(0, 0, 0, 0.2);
+      transition: all 0.1s;
+      flex-shrink: 0;
+    }
+
+    .white-key:active,
+    .white-key.active {
+      background: linear-gradient(to bottom, #ddd 0%, #ebedee 100%);
+      transform: translateY(2px);
+      box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.2);
+    }
+
+    .black-key {
+      background: linear-gradient(to bottom, #444 0%, #111 10%, #222 90%, #000 100%);
+      border-radius: 0 0 3px 3px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+      transition: all 0.1s;
+      z-index: 30;
+      flex-shrink: 0;
+    }
+
+    .black-key:active,
+    .black-key.active {
+      background: linear-gradient(to bottom, #222 0%, #000 100%);
+      transform: translateY(1px);
+      box-shadow: 0 2px 3px rgba(0, 0, 0, 0.5);
+    }
+
+    .key-label {
+      font-size: 9px;
+      font-weight: 800;
+      color: #94a3b8;
+      pointer-events: none;
+      margin-bottom: 8px;
+      text-align: center;
+      width: 100%;
+    }
+
+    .modal-overlay {
+      background-color: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(4px);
+    }
+
+    /* Responsive adjustments for the keys */
+    @media (max-width: 640px) {
+      .white-key {
+        width: 32px;
+        height: 140px;
+      }
+
+      .black-key {
+        width: 20px;
+        height: 85px;
+        margin-left: -10px;
+        margin-right: -10px;
+      }
+    }
+
+    @media (min-width: 641px) {
+      .white-key {
+        width: 44px;
+        height: 180px;
+      }
+
+      .black-key {
+        width: 28px;
+        height: 110px;
+        margin-left: -14px;
+        margin-right: -14px;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-slate-100">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const Icon = ({ name, className }) => {
+      useEffect(() => {
+        if (window.lucide) {
+          lucide.createIcons();
+        }
+      }, [name]);
+      return <i data-lucide={name} className={className}></i>;
+    };
+
+    const SUCCESS_THRESHOLD = 50;
+
+    const ALL_NOTES = [
+      // Bass Staff (𝄢)
+      { midi: 36, name: 'C2', staff: 'bass', pos: 11 },
+      { midi: 38, name: 'D2', staff: 'bass', pos: 10 },
+      { midi: 40, name: 'E2', staff: 'bass', pos: 9 },
+      { midi: 41, name: 'F2', staff: 'bass', pos: 8.5 },
+      { midi: 43, name: 'G2', staff: 'bass', pos: 8 },
+      { midi: 45, name: 'A2', staff: 'bass', pos: 7 },
+      { midi: 47, name: 'B2', staff: 'bass', pos: 6 },
+      { midi: 48, name: 'C3', staff: 'bass', pos: 5 },
+      { midi: 50, name: 'D3', staff: 'bass', pos: 4 },
+      { midi: 52, name: 'E3', staff: 'bass', pos: 3 },
+      { midi: 53, name: 'F3', staff: 'bass', pos: 2 },
+      { midi: 55, name: 'G3', staff: 'bass', pos: 1 },
+      { midi: 57, name: 'A3', staff: 'bass', pos: 0 },
+      { midi: 59, name: 'B3', staff: 'bass', pos: -1 },
+
+      // Treble Staff (𝄞)
+      { midi: 60, name: 'C4', staff: 'treble', pos: 10 },
+      { midi: 62, name: 'D4', staff: 'treble', pos: 9 },
+      { midi: 64, name: 'E4', staff: 'treble', pos: 8 },
+      { midi: 65, name: 'F4', staff: 'treble', pos: 7 },
+      { midi: 67, name: 'G4', staff: 'treble', pos: 6 },
+      { midi: 69, name: 'A4', staff: 'treble', pos: 5 },
+      { midi: 71, name: 'B4', staff: 'treble', pos: 4 },
+      { midi: 72, name: 'C5', staff: 'treble', pos: 3 },
+      { midi: 74, name: 'D5', staff: 'treble', pos: 2 },
+      { midi: 76, name: 'E5', staff: 'treble', pos: 1 },
+      { midi: 77, name: 'F5', staff: 'treble', pos: 0 },
+      { midi: 79, name: 'G5', staff: 'treble', pos: -1 },
+      { midi: 81, name: 'A5', staff: 'treble', pos: -2 },
+    ];
+
+    const PROGRESSIVE_LEVELS = [
+      { id: 1, name: "Level 1: FACE", notes: [65, 69, 72, 76], mnemonic: "Treble Spaces: F-A-C-E" },
+      { id: 2, name: "Level 2: Treble Lines", notes: [64, 67, 71, 74, 77], mnemonic: "Every Good Boy Does Fine" },
+      { id: 3, name: "Level 3: Middle C Center", notes: [59, 60, 62], mnemonic: "B3, Middle C (C4), and D4" },
+      { id: 4, name: "Level 4: All Cows Eat Grass", notes: [45, 48, 52, 55], mnemonic: "Bass Spaces: A-C-E-G" },
+      { id: 5, name: "Level 5: Great Big Dogs...", notes: [43, 47, 50, 53, 57], mnemonic: "Bass Lines: G-B-D-F-A" },
+      { id: 6, name: "Level 6: Grand Staff Mastery", notes: ALL_NOTES.map(n => n.midi), mnemonic: "Combine all knowledge!" }
+    ];
+
+    const STORAGE_KEY = 'notemaster_progress_v4';
+
+    const MusicalNote = ({ feedback, pos, isGhost = false }) => {
+      const stemDown = pos <= 4;
+      const color = isGhost ? '#cbd5e1' : (feedback === 'correct' ? '#22c55e' : feedback === 'wrong' ? '#ef4444' : '#1e293b');
+      const opacity = isGhost ? '0.6' : '1';
+
+      const baseY = 50;
+      const halfSpacing = 7;
+      const noteCenterY = baseY + (pos * halfSpacing);
+
+      return (
+        <svg
+          width="60"
+          height="120"
+          viewBox="0 0 60 120"
+          className={`absolute left-1/2 -translate-x-1/2 transition-all duration-200 ${feedback === 'wrong' && !isGhost ? 'animate-shake' : ''}`}
+          style={{ top: `${noteCenterY - 60}px`, opacity }}
+        >
+          <ellipse
+            cx="30"
+            cy="60"
+            rx="7.5"
+            ry="5.5"
+            fill={color}
+            transform="rotate(-20, 30, 60)"
+          />
+          <rect
+            x={stemDown ? "23" : "36.5"}
+            y={stemDown ? "60" : "30"}
+            width="1.8"
+            height="30"
+            fill={color}
+          />
+        </svg>
+      );
+    };
+
+    const SuccessModal = ({ levelName, onNext, onStay }) => {
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center animate-in fade-in zoom-in duration-300">
+            <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Icon name="party-popper" className="w-10 h-10" />
+            </div>
+            <h2 className="text-2xl font-black text-slate-800 mb-2">Level Mastered!</h2>
+            <p className="text-slate-500 mb-8">You've mastered <span className="font-bold text-slate-700">{levelName}</span>. Ready for the next challenge?</p>
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={onNext}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-indigo-200"
+              >
+                Next Lesson
+              </button>
+              <button
+                onClick={onStay}
+                className="w-full bg-slate-50 hover:bg-slate-100 text-slate-500 font-bold py-3 rounded-2xl transition-all"
+              >
+                Stay and Practice
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const App = () => {
+      const [currentLevelIdx, setCurrentLevelIdx] = useState(0);
+      const [currentNote, setCurrentNote] = useState(null);
+      const [wrongNote, setWrongNote] = useState(null);
+      const [feedback, setFeedback] = useState(null);
+      const [score, setScore] = useState(0);
+      const [streak, setStreak] = useState(0);
+      const [gameStarted, setGameStarted] = useState(false);
+      const [completedLevels, setCompletedLevels] = useState([]);
+      const [showSuccessModal, setShowSuccessModal] = useState(false);
+      const pianoRef = useRef(null);
+      const lastMidiRef = useRef(null);
+
+      useEffect(() => {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            setScore(parsed.score || 0);
+            setCompletedLevels(parsed.completedLevels || []);
+          } catch (e) { console.error(e); }
+        }
+      }, []);
+
+      useEffect(() => {
+        if (gameStarted && pianoRef.current) {
+          const pianoWidth = pianoRef.current.scrollWidth;
+          const containerWidth = pianoRef.current.clientWidth;
+          pianoRef.current.scrollLeft = (pianoWidth - containerWidth) / 2;
+        }
+      }, [gameStarted]);
+
+      const saveProgress = (newScore, newCompleted) => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ score: newScore, completedLevels: newCompleted }));
+      };
+
+      const generateNote = () => {
+        const pool = PROGRESSIVE_LEVELS[currentLevelIdx].notes;
+        let candidates = pool;
+        if (pool.length > 1 && lastMidiRef.current !== null) {
+          candidates = pool.filter(m => m !== lastMidiRef.current);
+        }
+        const randomMidi = candidates[Math.floor(Math.random() * candidates.length)];
+        lastMidiRef.current = randomMidi;
+        setCurrentNote(ALL_NOTES.find(n => n.midi === randomMidi));
+        setFeedback(null);
+        setWrongNote(null);
+      };
+
+      const startLevel = (idx) => {
+        setCurrentLevelIdx(idx);
+        setStreak(0);
+        lastMidiRef.current = null;
+        setGameStarted(true);
+        setShowSuccessModal(false);
+        setTimeout(generateNote, 0);
+      };
+
+      const handleNextLevel = () => {
+        const nextIdx = currentLevelIdx + 1;
+        if (nextIdx < PROGRESSIVE_LEVELS.length) {
+          startLevel(nextIdx);
+        } else {
+          setGameStarted(false);
+        }
+      };
+
+      const handleKeyClick = (midi) => {
+        if (!currentNote || feedback === 'correct') return;
+
+        if (midi === currentNote.midi) {
+          setFeedback('correct');
+          const newScore = score + 10;
+          const newStreak = streak + 1;
+          setScore(newScore);
+          setStreak(newStreak);
+
+          let nextCompleted = completedLevels;
+          const levelId = PROGRESSIVE_LEVELS[currentLevelIdx].id;
+
+          if (newStreak === SUCCESS_THRESHOLD && !completedLevels.includes(levelId)) {
+            nextCompleted = [...completedLevels, levelId];
+            setCompletedLevels(nextCompleted);
+            setShowSuccessModal(true);
+          }
+
+          saveProgress(newScore, nextCompleted);
+          if (!showSuccessModal) {
+            setTimeout(generateNote, 800);
+          }
+        } else {
+          setFeedback('wrong');
+          setWrongNote(ALL_NOTES.find(n => n.midi === midi));
+          setStreak(0);
+          setTimeout(() => {
+            setFeedback(null);
+            setWrongNote(null);
+          }, 1200);
+        }
+      };
+
+      return (
+        <div className="min-h-screen text-slate-900 font-sans p-4 md:p-10 flex flex-col items-center">
+          {showSuccessModal && (
+            <SuccessModal
+              levelName={PROGRESSIVE_LEVELS[currentLevelIdx].name}
+              onNext={handleNextLevel}
+              onStay={() => {
+                setShowSuccessModal(false);
+                generateNote();
+              }}
+            />
+          )}
+
+          <header className="max-w-4xl w-full flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
+            <h1 className="text-4xl font-black tracking-tight text-indigo-600 flex items-center gap-2">
+              <Icon name="music" className="w-8 h-8" /> NoteMaster
+            </h1>
+            <div className="bg-white px-5 py-3 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-3">
+              <Icon name="award" className="text-amber-500 w-6 h-6" />
+              <div><p className="text-[10px] text-slate-400 font-bold uppercase">Score</p><span className="font-black text-xl">{score}</span></div>
+            </div>
+          </header>
+
+          {!gameStarted ? (
+            <main className="max-w-3xl w-full bg-white p-10 rounded-3xl shadow-xl border border-slate-100">
+              <h2 className="text-2xl font-bold mb-6 text-slate-800">Choose a Lesson</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {PROGRESSIVE_LEVELS.map((level, idx) => (
+                  <button key={idx} onClick={() => startLevel(idx)} className={`p-6 border-2 rounded-2xl text-left transition-all hover:border-indigo-200 hover:bg-indigo-50/30 group ${completedLevels.includes(level.id) ? 'bg-green-50 border-green-100' : 'bg-slate-50 border-slate-100'}`}>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-[10px] font-black uppercase text-indigo-400">Level {idx + 1}</span>
+                      {completedLevels.includes(level.id) && <Icon name="check-circle-2" className="w-4 h-4 text-green-500" />}
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800">{level.name}</h3>
+                    <p className="text-sm text-slate-500">{level.mnemonic}</p>
+                  </button>
+                ))}
+              </div>
+            </main>
+          ) : (
+            <main className="max-w-6xl w-full flex flex-col items-center gap-6">
+              <div className="w-full flex justify-between items-center px-2">
+                <button onClick={() => setGameStarted(false)} className="text-slate-400 hover:text-indigo-600 font-bold text-sm flex items-center gap-2 group">
+                  <Icon name="rotate-ccw" className="w-4 h-4 group-hover:rotate-[-45deg] transition-transform" /> Back to Lessons
+                </button>
+                {completedLevels.includes(PROGRESSIVE_LEVELS[currentLevelIdx].id) && (
+                  <div className="bg-green-100 text-green-700 text-[10px] font-black uppercase px-3 py-1 rounded-full flex items-center gap-1.5 border border-green-200">
+                    <Icon name="star" className="w-3 h-3 fill-current" /> Mastered
+                  </div>
+                )}
+              </div>
+
+              {currentNote && (
+                <div className="flex flex-col md:flex-row gap-8 items-stretch w-full justify-center">
+                  <div className="relative w-full max-w-sm h-80 bg-white rounded-3xl shadow-sm border border-slate-200 flex flex-col items-center justify-center overflow-hidden px-4">
+                    <div className="relative w-full h-32 mb-8">
+                      {[0, 2, 4, 6, 8].map(i => (
+                        <div key={i} className="absolute left-0 right-0 h-[1.5px] bg-slate-700" style={{ top: `${50 + (i * 7)}px` }} />
+                      ))}
+
+                      {currentNote.pos >= 10 && <div className="absolute left-1/2 -translate-x-1/2 w-10 h-[1.5px] bg-slate-700" style={{ top: `${50 + (10 * 7)}px` }} />}
+                      {currentNote.pos <= -2 && <div className="absolute left-1/2 -translate-x-1/2 w-10 h-[1.5px] bg-slate-700" style={{ top: `${50 + (-2 * 7)}px` }} />}
+
+                      {currentNote.midi >= 60 ? (
+                        <div className="absolute left-1 clef-font select-none pointer-events-none opacity-90 text-[108px]" style={{ top: '15px' }}>𝄞</div>
+                      ) : (
+                        <div className="absolute left-2 clef-font select-none pointer-events-none opacity-90 text-[74px]" style={{ top: '38px' }}>𝄢</div>
+                      )}
+
+                      <MusicalNote feedback={feedback} pos={currentNote.pos} />
+
+                      {wrongNote && (
+                        <div className="absolute inset-0 pointer-events-none opacity-50">
+                          <MusicalNote isGhost={true} pos={wrongNote.pos} />
+                          {wrongNote.pos >= 10 && <div className="absolute left-1/2 -translate-x-1/2 w-10 h-[1.5px] bg-slate-400" style={{ top: `${50 + (10 * 7)}px` }} />}
+                          {wrongNote.pos <= -2 && <div className="absolute left-1/2 -translate-x-1/2 w-10 h-[1.5px] bg-slate-400" style={{ top: `${50 + (-2 * 7)}px` }} />}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="absolute bottom-6 left-0 right-0 px-6">
+                      <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex items-center gap-3">
+                        <div className="bg-indigo-600 text-white rounded-lg p-1.5">
+                          <Icon name="help-circle" className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase text-indigo-400 tracking-wider">Cheat Sheet</p>
+                          <p className="text-sm font-bold text-indigo-900 leading-tight">
+                            {PROGRESSIVE_LEVELS[currentLevelIdx].mnemonic}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex-1 max-w-sm flex flex-col justify-between">
+                    <div>
+                      <h4 className="font-black text-slate-800 mb-1">Mission Progress</h4>
+                      <p className="text-xs text-slate-500 mb-6 uppercase tracking-widest font-bold">
+                        {PROGRESSIVE_LEVELS[currentLevelIdx].name}
+                      </p>
+
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-end">
+                          <span className="text-[10px] font-black text-indigo-500 uppercase">Streak</span>
+                          <span className={`text-2xl font-black leading-none transition-colors ${streak >= SUCCESS_THRESHOLD ? 'text-green-600' : 'text-indigo-600'}`}>
+                            {streak}
+                          </span>
+                        </div>
+                        <div className="h-4 bg-slate-100 rounded-full overflow-hidden border border-slate-200 p-1">
+                          <div className={`h-full rounded-full transition-all duration-500 shadow-lg ${streak >= SUCCESS_THRESHOLD ? 'bg-green-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min((streak / SUCCESS_THRESHOLD) * 100, 100)}%` }} />
+                        </div>
+                        <p className="text-[10px] text-center text-slate-400 font-bold uppercase">
+                          {streak >= SUCCESS_THRESHOLD ? "Lesson Completed!" : `Get to ${SUCCESS_THRESHOLD} to master this level`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-8 pt-6 border-t border-slate-100">
+                      <div className="flex items-center gap-3 text-slate-400 italic text-xs">
+                        <Icon name="info" className="w-4 h-4 flex-shrink-0" />
+                        <p>Identify the note by pressing the key on the piano. Swipe the piano to see more notes.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="w-full piano-container mt-4">
+                <div className="piano-felt"></div>
+                <div
+                  ref={pianoRef}
+                  className="flex justify-start overflow-x-auto custom-scrollbar pb-6 relative select-none cursor-grab active:cursor-grabbing"
+                >
+                  <div className="flex px-8 relative">
+                    {Array.from({ length: 76 }, (_, i) => i + 21).map(midi => {
+                      const isBlack = [1, 3, 6, 8, 10].includes(midi % 12);
+                      const isCurrent = currentNote && currentNote.midi === midi;
+                      const isWrong = wrongNote && wrongNote.midi === midi;
+                      const isActive = (feedback === 'correct' && isCurrent) || isWrong;
+
+                      const statusClass = (feedback === 'correct' && isCurrent)
+                        ? '!bg-green-500 shadow-[inset_0_0_20px_rgba(0,0,0,0.3)]'
+                        : isWrong
+                          ? '!bg-red-500 shadow-[inset_0_0_20px_rgba(0,0,0,0.3)]'
+                          : '';
+
+                      if (isBlack) {
+                        return (
+                          <button
+                            key={midi}
+                            onClick={() => handleKeyClick(midi)}
+                            className={`black-key relative flex items-end justify-center ${statusClass} ${isActive ? 'active' : ''}`}
+                          />
+                        );
+                      }
+
+                      return (
+                        <button
+                          key={midi}
+                          onClick={() => handleKeyClick(midi)}
+                          className={`white-key flex items-end justify-center ${statusClass} ${isActive ? 'active' : ''}`}
+                        >
+                          <div className="key-label">
+                            {midi % 12 === 0 ? `C${midi / 12 - 1}` : ""}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex justify-center gap-6 mt-2 text-white/40 text-[10px] uppercase font-bold tracking-widest">
+                  <span>&larr; Bass Clef Side</span>
+                  <span>&rarr; Treble Clef Side</span>
+                </div>
+              </div>
+            </main>
+          )}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+
+</html>
